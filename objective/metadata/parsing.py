@@ -26,17 +26,24 @@ class HeaderParser (object):
         self._files = {}
 
 
-    def parse(self):
+    def parse(self, arch=None):
+        args = []
+        if arch is not None:
+            args.extend(['-arch', arch])
+
         unit = self._index.parse("meta-extract.m",
                     unsaved_files=[
                         ("meta-extract.m", "#import <%s/%s.h>"%(self._framework, self._framework)),
-                    ])
+                    ],
+                    args=args,
+                    options=0x1, # CXTranslationUnit_DetailedPreprocessingRecord
+                )
         self.process(unit)
         self.dump(unit.cursor)
 
 
     def dump(self, node, indent="  "):
-        print "%s%s %s"%(indent, node.kind, node.spelling or node.displayName)
+        print "%s%s | %s | %s | %s"%(indent, node.kind, node.spelling, node.displayName, node.objc_type_encoding)
         have_children = False
         for ch in node.get_children():
             if self.is_framework_location(ch.location):
@@ -155,7 +162,7 @@ class HeaderParser (object):
         except StopIteration:
             type = None
 
-        print node.type, node.objc_type_encoding, type
+        #print node.type, node.objc_type_encoding, type
 
         self._definitions['variable'].append({
             'name': node.spelling,
@@ -174,6 +181,6 @@ def _remap(frm_chk, path):
 
 if __name__ == "__main__":
     p = HeaderParser("Foundation")
-    p.parse()
+    p.parse('x86_64')
     #import pprint
     #pprint.pprint (p._definitions)
