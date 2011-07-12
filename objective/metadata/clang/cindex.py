@@ -71,7 +71,6 @@ def get_cindex_library():
     import platform
     name = platform.system()
     if name == 'Darwin':
-        #return cdll.LoadLibrary('/Developer//usr/clang-ide/lib/libclang.dylib')
         return cdll.LoadLibrary('/opt/clang/lib/libclang.dylib')
     elif name == 'Windows':
         return cdll.LoadLibrary('libclang.dll')
@@ -322,12 +321,59 @@ class CursorKind(object):
         """Test if this is a statement kind."""
         return CursorKind_is_stmt(self)
 
+    def is_attribute(self):
+        """Test if this is an attribute kind."""
+        return CursorKind_is_attribute(self)
+
     def is_invalid(self):
         """Test if this is an invalid kind."""
         return CursorKind_is_inv(self)
 
     def __repr__(self):
         return 'CursorKind.%s' % (self.name,)
+
+
+### Type
+
+class Type (Structure):
+    _fields_ = [("_kind_id", c_int), ("data", c_void_p * 2)]
+
+    def __repr__(self):
+        return "<Type %s>"%(self._kind_id,)
+
+    def __eq__(self, other):
+        return Type_eq(self, other)
+
+    def __ne__(self, other):
+        return not Type_eq(self, other)
+
+    @property
+    def canonicalType(self):
+        return Type_canonical(self)
+
+    @property
+    def pointeeType(self):
+        return Type_pointeeType(self)
+
+    @property
+    def isConstQualified(self):
+        return Type_isConstQualified(self)
+
+    @property
+    def isVolatileQualified(self):
+        return Type_isVolatileQualified(self)
+
+    @property
+    def typeDeclaration(self):
+        return Type_typeDeclaration(self)
+
+
+    @property
+    def typeKindSpelling(self):
+        return Type_typeKindSpelling(self)
+
+
+
 
 # FIXME: Is there a nicer way to expose this enumeration? We could potentially
 # represent the nested structure, or even build a class hierarchy. The main
@@ -573,6 +619,10 @@ class Cursor(Structure):
     def __ne__(self, other):
         return not Cursor_eq(self, other)
 
+    @property
+    def objc_type_encoding(self):
+        return Cursor_typeEncoding(self)
+
     def is_definition(self):
         """
         Returns true if the declaration pointed at by the cursor is also a
@@ -618,6 +668,10 @@ class Cursor(Structure):
     @property
     def displayName(self):
         return Cursor_displayName(self)
+
+    @property
+    def type(self):
+        return Cursor_type(self)
 
     @property
     def location(self):
@@ -983,8 +1037,9 @@ class TranslationUnit(ClangObject):
         headers.
         """
         def visitor(fobj, lptr, depth, includes):
-            loc = lptr.contents
-            includes.append(FileInclusion(loc.file, File(fobj), loc, depth))
+            if depth > 0:
+                loc = lptr.contents
+                includes.append(FileInclusion(loc.file, File(fobj), loc, depth))
 
         # Automatically adapt CIndex/ctype pointers to python objects
         includes = []
@@ -1079,7 +1134,7 @@ class File(ClangObject):
     @property
     def name(self):
         """Return the complete file and path name of the file."""
-        return File_name(self)
+        return _CXString_getCString(File_name(self))
 
     @property
     def time(self):
@@ -1152,6 +1207,10 @@ CursorKind_is_stmt = lib.clang_isStatement
 CursorKind_is_stmt.argtypes = [CursorKind]
 CursorKind_is_stmt.restype = bool
 
+CursorKind_is_attribute = lib.clang_isAttribute
+CursorKind_is_attribute.argtypes = [CursorKind]
+CursorKind_is_attribute.restype = bool
+
 CursorKind_is_inv = lib.clang_isInvalid
 CursorKind_is_inv.argtypes = [CursorKind]
 CursorKind_is_inv.restype = bool
@@ -1161,6 +1220,10 @@ CursorKind_is_inv.restype = bool
 Cursor_get = lib.clang_getCursor
 Cursor_get.argtypes = [TranslationUnit, SourceLocation]
 Cursor_get.restype = Cursor
+
+Cursor_type = lib.clang_getCursorType
+Cursor_type.argtypes = [Cursor]
+Cursor_type.restype = Type
 
 Cursor_null = lib.clang_getNullCursor
 Cursor_null.restype = Cursor
@@ -1210,6 +1273,44 @@ Cursor_visit_callback = CFUNCTYPE(c_int, Cursor, Cursor, py_object)
 Cursor_visit = lib.clang_visitChildren
 Cursor_visit.argtypes = [Cursor, Cursor_visit_callback, py_object]
 Cursor_visit.restype = c_uint
+
+# Type Functions
+Type_eq = lib.clang_equalTypes
+Type_eq.argtypes = [Type, Type]
+Type_eq.restype = c_uint
+
+Type_canonical = lib.clang_getCanonicalType
+Type_canonical.argtypes = [Type]
+Type_canonical.restype = Type
+
+Type_pointeeType = lib.clang_getPointeeType
+Type_pointeeType.argtypes = [Type]
+Type_pointeeType.restype = Type
+
+Type_isConstQualified = lib.clang_isConstQualifiedType
+Type_isConstQualified.argtypes = [Type]
+Type_isConstQualified.restype = c_uint
+
+Type_isVolatileQualified = lib.clang_isVolatileQualifiedType
+Type_isVolatileQualified.argtypes = [Type]
+Type_isVolatileQualified.restype = c_uint
+
+Type_typeDeclaration = lib.clang_getTypeDeclaration
+Type_typeDeclaration.argtypes = [Type]
+Type_typeDeclaration.restype = Type
+
+Cursor_typeEncoding = lib.clang_getDeclObjCTypeEncoding
+Cursor_typeEncoding.argtypes = [Cursor]
+Cursor_typeEncoding.restype = _CXString
+Cursor_typeEncoding.errcheck = _CXString.from_result
+
+Type_typeKindSpelling = lib.clang_getTypeKindSpelling
+Type_typeKindSpelling.argtypes = [Type]
+Type_typeKindSpelling.restype = _CXString
+Type_typeKindSpelling.errcheck = _CXString.from_result
+
+
+
 
 # Index Functions
 Index_create = lib.clang_createIndex
@@ -1263,7 +1364,7 @@ TranslationUnit_includes.argtypes = [TranslationUnit,
 # File Functions
 File_name = lib.clang_getFileName
 File_name.argtypes = [File]
-File_name.restype = c_char_p
+File_name.restype = _CXString
 
 File_time = lib.clang_getFileTime
 File_time.argtypes = [File]

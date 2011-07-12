@@ -32,14 +32,29 @@ class HeaderParser (object):
                         ("meta-extract.m", "#import <%s/%s.h>"%(self._framework, self._framework)),
                     ])
         self.process(unit)
+        self.dump(unit.cursor)
+
+
+    def dump(self, node, indent="  "):
+        print "%s%s %s"%(indent, node.kind, node.spelling or node.displayName)
+        have_children = False
+        for ch in node.get_children():
+            if self.is_framework_location(ch.location):
+                self.dump(ch, indent + "  ")
+                have_children = True
+
+        if have_children:
+            print
+
+
 
     def process(self, unit):
         seen = set()
         for node in unit.cursor.get_children():
             if node.kind not in seen:
                 seen.add(node.kind)
-            if node.kind == cindex.CursorKind.PREPROCESSING_DIRECTIVE:
-                print node
+            #if node.kind == cindex.CursorKind.PREPROCESSING_DIRECTIVE:
+            #    print node
 
             if not self.is_framework_location(node.location):
                 continue
@@ -81,13 +96,15 @@ class HeaderParser (object):
 
     @register(cindex.CursorKind.INCLUSION_DIRECTIVE)
     def _handle_include(self, node):
-        print node
+        #print node
+        pass
 
 
 
     @register(cindex.CursorKind.TYPEDEF_DECL)
     def _handle_typdef(self, node):
-        print node.spelling, [(n.kind, n.spelling, n.displayName) for n in node.get_children()]
+        #print node.spelling, [(n.kind, n.spelling, n.displayName) for n in node.get_children()]
+        pass
 
     @register(cindex.CursorKind.STRUCT_DECL)
     def _handle_struct(self, node):
@@ -138,6 +155,8 @@ class HeaderParser (object):
         except StopIteration:
             type = None
 
+        print node.type, node.objc_type_encoding, type
+
         self._definitions['variable'].append({
             'name': node.spelling,
             'location': self.location_info(node.location),
@@ -156,5 +175,5 @@ def _remap(frm_chk, path):
 if __name__ == "__main__":
     p = HeaderParser("Foundation")
     p.parse()
-    import pprint
-    pprint.pprint (p._definitions)
+    #import pprint
+    #pprint.pprint (p._definitions)
