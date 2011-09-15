@@ -1,22 +1,33 @@
 PyObjC metadata generator using objective.cparser
 
-* Classes for parsing headers, various SDKs and architecture flags
 
-  Store results in generic data structure
+This project is hopelessly incomplete at the moment
 
-* Compile small test programs to enhance parsed data 
-  - values for enums
-  - real type encodings
-    (but: try to calculate them in Python code, to deal with
-     our enhanced encodings)
+TODO:
+- Enhance the parser module to collect all useful definitions
+- Add useful storage format (probably pretty-printed JSON)
+- Merge information from several parses:
+  - i386, x86_64, ppc
+  - OSX 10.5, 10.6, 10.7
 
-* Merge parsed data for various platforms
+- Extract those bits that are genuinely useful:
 
-* Merge existing ".brigesupport" files.
+  * Constant definitions
+  * Variable defintions (extern NSString* NSFoo ...)
+  * Function definitions
+  * Methods with "interesting" prototypes
+    (ptr-to-value arguments, special types like BOOL)
+  * Informal protocols
 
-* GUI that shows header files and parsed data, goals
+- Add automatic enrichment of some "intersting" prototypes
+  * an 'NSError**' argument is almost certainly a
+    by reference output argument, null allowed,
+  * CFCreateFoo() that returns a CFType returns a value
+    that is CFRetained, 
+  ...
 
-  1) Verify that everything gets parsed
-  2) Add custom metadata (in/out annotations, ...)
+- Add mechanisme for adding metadata
+  * Specify argument annotations
+  * Possibly add new definitions
+  * Specify that some definitions should not be wrapped
 
-* Compile into new format
