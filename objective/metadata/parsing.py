@@ -4,6 +4,8 @@ interesting definitions.
 """
 import operator
 import os
+import subprocess
+import platform
 
 from objective.cparser import parse_file, c_ast
 
@@ -84,10 +86,21 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework):
+    def __init__(self, framework, arch='x86_64', sdk='/'):
         self.framework = framework
         self.start_header = framework + '.h'
         self.additional_headers = []
+        self.arch = arch
+        self.sdk = sdk
+        
+
+        self.enum_values= {}
+
+    def _gen_includes(self, fp):
+        fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
+        for hdr in self.additional_headers:
+            fp.write('#import <%s/%s>'%(self.framework, hdr))
+
 
     def parse(self):
 
@@ -96,9 +109,7 @@ class FrameworkParser (object):
         #   preprocessor
         fname = '_prs_%s.m'%(self.framework,)
         with open(fname, 'w') as fp:
-            fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
-            for hdr in self.additional_headers:
-                fp.write('#import <%s/%s>'%(self.framework, hdr))
+            self._gen_includes(fp)
 
         # - Parse the file. 
         #   The -D and -U options are needed to strip out bits of code
@@ -106,7 +117,7 @@ class FrameworkParser (object):
         try:
             ast = parse_file(fname, 
                 use_cpp=True, cpp_args=[
-                    '-E', '-D__attribute__(x)=', '-D__asm(x)=',
+                    '-E', '-arch', self.arch, '-D__attribute__(x)=', '-D__asm(x)=',
                     '-D__typeof__(x)=long', '-U__BLOCKS__'], cpp_path='clang')
         finally:
             os.unlink(fname)
@@ -114,6 +125,22 @@ class FrameworkParser (object):
         # - And finally walk the AST to find useful definitions
         visitor = DefinitionVisitor(self)
         visitor.visit(ast)
+
+    def definitions(self):
+        """
+        Returns a dictionary with information about what was parsed and
+        the definitions.
+        """
+        return {
+            'framework':    self.framework,
+            'arch':         self.arch,
+            'sdk':          self.sdk,
+            'release':      platform.mac_ver()[0],
+
+            'definitions': {
+                'enum':     self.enum_values,
+            },
+        }
 
     def _select_node(self, node):
         """ 
@@ -133,6 +160,38 @@ class FrameworkParser (object):
             return True
 
         return False
+
+    def _calculate_enum_value(self, name):
+        fname = '_prs_%s.m'%(self.framework,)
+        with open(fname, 'w') as fp:
+            self._gen_includes(fp)
+
+            fp.write("#include <stdio.h>\n")
+            fp.write("int main(void) {")
+            fp.write("   printf(\"%%d\n\", %s);\n"%(name,))
+            fp.write("   return 0;\n")
+            fp.write("}\n")
+
+        p = subprocess.Popen(['clang', 
+            '-o', fname[:-2], 
+            'arch', self.arch,
+            fname,
+            '-framework', self.framework])
+        xit = p.wait()
+        os.unlink(fname)
+        if xit != 0:
+            print "WARNING: Cannot calculate value for '%s'"%(name,)
+            return None
+
+        p = subprocess.Popen(['./' + fname[:-2]], stdout=subprocess.PIPE)
+        data = p.communicate()[0]
+        xit = p.wait()
+        if xit != 0:
+            print "WARNING: Cannot calculate value for '%s'"%(name,)
+            return None
+
+        return int(data.strip())
+
 
     def append_enumerator_list(self, node):
 
@@ -164,8 +223,16 @@ class FrameworkParser (object):
             else:
                 prev_value = None
 
-            print (item.name, value)
+                value = self._calculate_enum_value(item.name)
+                if value is None:
+                    continue
+
+            self.enum_values[item.name] = value
+
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')
     p.parse()
+
+    import pprint
+    pprint.pprint(p.definitions())

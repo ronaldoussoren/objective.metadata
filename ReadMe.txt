@@ -5,7 +5,9 @@ This project is hopelessly incomplete at the moment
 
 TODO:
 - Enhance the parser module to collect all useful definitions
-- Add useful storage format (probably pretty-printed JSON)
+- Add useful storage format
+  -> The format will be JSON
+
 - Merge information from several parses:
   - i386, x86_64, ppc
   - OSX 10.5, 10.6, 10.7
@@ -30,4 +32,3 @@ TODO:
   * Specify argument annotations
   * Possibly add new definitions
   * Specify that some definitions should not be wrapped
-
