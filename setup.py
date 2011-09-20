@@ -18,7 +18,7 @@ setup(
         Objective-C header files that cannot be extracted from the
         Objective-C runtime. 
     """,
-    install_requires=['objective.cparser'],
+    install_requires=['objective.cparser', 'pyobjc-core'],
     license='MIT',
     version='0.1',
     author='Ronald Oussoren',
