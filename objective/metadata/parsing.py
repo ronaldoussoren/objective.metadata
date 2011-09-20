@@ -7,51 +7,11 @@ import os
 import subprocess
 import platform
 
+
+from typecodes import TypeCodes
+from ast_tools import parse_int, constant_fold
+
 from objective.cparser import parse_file, c_ast
-
-OPERATORS = {
-    '+':    operator.add,
-    '-':    operator.sub,
-    '*':    operator.mul,
-    '/':    operator.floordiv,
-    '<<':   operator.lshift,
-    '>>':   operator.rshift,
-}
-
-def parse_int(value):
-    value = value.lower().rstrip('l').rstrip('u')
-    return int(value, 0)
-
-def constant_fold(node):
-    """
-    Try to constant-fold an expression
-    """
-    if isinstance(node, c_ast.Constant):
-        return node
-
-    if isinstance(node, c_ast.UnaryOp):
-        expr = constant_fold(node.expr)
-        if isinstance(expr, c_ast.Constant):
-            return c_ast.Constant(expr.type, node.op + expr.value, node.coord)
-        elif expr is not node.expr:
-            return c_ast.UnaryOp(node.op, expr, node.coord)
-
-    elif isinstance(node, c_ast.BinaryOp):
-        left  = constant_fold(node.left)
-        right = constant_fold(node.right)
-        if isinstance(left, c_ast.Constant) and isinstance(right, c_ast.Constant):
-            if left.type == 'int' and right.type == 'int':
-                left = parse_int(left.value)
-                right = parse_int(right.value)
-
-                fun = OPERATORS.get(node.op)
-                if fun is not None:
-                    return c_ast.Constant('int', str(fun(left, right)), node.coord)
-
-        if left is not node.left or right is not node.right:
-            return c_ast.BinaryOp(node.op, left, right, node.coord)
-
-    return node
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
@@ -76,8 +36,24 @@ class DefinitionVisitor (FilteredVisitor):
     locates interesting definitions.
     """
     def visit_EnumeratorList(self, node):
+        self.generic_visit(node)
         self._parser.append_enumerator_list(node)
 
+    def visit_Typedef(self, node):
+        self.generic_visit(node)
+        # TODO: add type to typestr registry
+
+        if not node.type.quals:
+            if isinstance(node.type.type, c_ast.Struct):
+                self._parser.add_struct(node.name, node.type.type)
+
+    def visit_Decl(self, node):
+        self.generic_visit(node)
+        if node.name is None:
+            return
+
+        if isinstance(node.type, c_ast.TypeDecl) and 'extern' in node.storage:
+            self._parser.add_extern(node.name, node.type)
 
 class FrameworkParser (object):
     """
@@ -88,13 +64,17 @@ class FrameworkParser (object):
     """
     def __init__(self, framework, arch='x86_64', sdk='/'):
         self.framework = framework
+        self.framework_path = '/%s.framework/'%(framework,)
         self.start_header = framework + '.h'
         self.additional_headers = []
         self.arch = arch
         self.sdk = sdk
         
+        self.headers = set()
 
         self.enum_values= {}
+        self.structs = {}
+        self.externs = {}
 
     def _gen_includes(self, fp):
         fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
@@ -121,6 +101,9 @@ class FrameworkParser (object):
                     '-D__typeof__(x)=long', '-U__BLOCKS__'], cpp_path='clang')
         finally:
             os.unlink(fname)
+
+        self.typecodes = TypeCodes()
+        self.typecodes.fill_from_ast(ast)
         
         # - And finally walk the AST to find useful definitions
         visitor = DefinitionVisitor(self)
@@ -137,8 +120,12 @@ class FrameworkParser (object):
             'sdk':          self.sdk,
             'release':      platform.mac_ver()[0],
 
+            'headers':      self.headers,
+
             'definitions': {
                 'enum':     self.enum_values,
+                'structs':  self.structs,
+                'externs':  self.externs,
             },
         }
 
@@ -156,7 +143,11 @@ class FrameworkParser (object):
         if node.coord.file is None:
             return False
 
-        if '/%s.framework'%(self.framework,) in node.coord.file:
+        if self.framework_path in node.coord.file:
+            i = node.coord.file.index(self.framework_path)
+            p = node.coord.file[i+len(self.framework_path) +len('Headers/'):]
+             
+            self.headers.add(p)
             return True
 
         return False
@@ -191,7 +182,6 @@ class FrameworkParser (object):
             return None
 
         return int(data.strip())
-
 
     def append_enumerator_list(self, node):
 
@@ -229,6 +219,15 @@ class FrameworkParser (object):
 
             self.enum_values[item.name] = value
 
+    def add_struct(self, name, type):
+        self.structs[name] = {
+            'typestr': None,
+        }
+
+    def add_extern(self, name, type):
+        self.externs[name] = {
+            'typestr': None,
+        }
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')
