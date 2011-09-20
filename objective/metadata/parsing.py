@@ -23,6 +23,8 @@ UNICODE_RE=re.compile('^@"(.*)"$')
 UNICODE2_RE=re.compile('^CFSTR"(.*)"$')
 ALIAS_RE=re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
 
+FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
+
 
 class FilteredVisitor (c_ast.NodeVisitor):
     """ 
@@ -77,7 +79,7 @@ class DefinitionVisitor (FilteredVisitor):
             self._parser.add_extern(node.name, node.type)
 
         if isinstance(node.type, c_ast.FuncDecl):
-            self._parser.add_function(node.name, node.type)
+            self._parser.add_function(node.name, node.type, node.funcspec)
 
 class FrameworkParser (object):
     """
@@ -103,6 +105,7 @@ class FrameworkParser (object):
         self.aliases = {}
         self.functions = {}
         self.cftypes = {}
+        self.func_macros = []
 
     def _gen_includes(self, fp):
         fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
@@ -160,6 +163,7 @@ class FrameworkParser (object):
                 'aliases':   self.aliases,
                 'functions': self.functions,
                 'cftypes':   self.cftypes,
+                'func_macros': self.func_macros,
             },
         }
 
@@ -300,7 +304,8 @@ class FrameworkParser (object):
             return []
 
         curfile = None
-        for ln in data.splitlines():
+        lines = data.splitlines()
+        for ln_idx, ln in enumerate(lines):
             m = LINE_RE.match(ln)
             if m is not None:
                 curfile = m.group(1)
@@ -355,14 +360,37 @@ class FrameworkParser (object):
                     continue
 
                 print "Warning: ignore #define %s %s"%(key, value)
+
+            m = FUNC_DEFINE_RE.match(ln)
+            if m is not None:
+                proto = m.group(1)
+                print proto
+                body = m.group(2).strip()
+                if body == '\\':
+                    body = body[ln_idx+1].strip()
+                    if body.endswith('\\'):
+                        print "Warning: ignore complex function #define %s"(proto,)
+                        continue
+
+                funcdef = "def %s: return %s"%(proto, body)
+                try:
+                    compile(funcdef, '-', 'exec')
+                except SyntaxError:
+                    pass
+
+                else:
+                    self.func_macros.append(funcdef)
+
     
-    def add_function(self, name, type):
+    def add_function(self, name, type, funcspec):
         self.functions[name] = func = { 
-            'name': name,
             'retval': None,
             'args': [],
         }
-        func['retval'] = self.typecodes.typestr(type.type)
+        if 'inline' in funcspec or '__inline__' in funcspec:
+            func['inline'] = True
+
+        func['retval'] = self.typecodes.typestr(type.type)[0]
         for arg in type.args.params:
             if isinstance(arg, c_ast.EllipsisParam):
                 func['variadic'] = True
@@ -370,7 +398,7 @@ class FrameworkParser (object):
 
             func['args'].append({
                 'name': arg.name,
-                'typestr': self.typecodes.typestr(arg.type),
+                'typestr': self.typecodes.typestr(arg.type)[0],
             })
 
         if name.endswith('GetTypeID'):
