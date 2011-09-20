@@ -1,5 +1,10 @@
 """
 A simple type code calculator
+
+TODO:
+- Calculation of typestr for struct typedefs doesn't work as well as I'd like
+  (in the from_ast function), haven't looked into that yet
+
 """
 from objective.cparser import c_ast
 import objc
@@ -67,6 +72,9 @@ class TypeCodes (object):
             # typestr from a Node
             return True
 
+    def typestr(self, key):
+        return self.__typestr_for_node(key)
+
     def __getitem__(self, key):
         # Key is either a string or a ast node for a type
         if isinstance(key, (str, unicode)):
@@ -78,7 +86,7 @@ class TypeCodes (object):
     def __typestr_for_node(self, node, name=None):
         special = False
         if isinstance(node, c_ast.TypeDecl):
-            return self.__typestr_for_node(node.type)
+            return self.__typestr_for_node(node.type, name)
 
         if isinstance(node, c_ast.Enum):
             return objc._C_INT, special

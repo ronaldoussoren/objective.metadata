@@ -220,13 +220,32 @@ class FrameworkParser (object):
             self.enum_values[item.name] = value
 
     def add_struct(self, name, type):
+        if name in self.typecodes:
+            typestr = self.typecodes[name]
+            special = self.typecodes.isspecial(name)
+
+        else:
+            typestr, special = self.typecodes.typestr(type)
+
+        fieldnames = []
+        if type.decls is not None:
+            for decl in type.decls:
+                fieldnames.append(decl.name)
+                ts, _ = self.typecodes.typestr(decl.type)
+                if '?' in ts:
+                    print "Skip %s: contains function pointers"%(name,)
+                    return
+
         self.structs[name] = {
-            'typestr': None,
+            'typestr': typestr,
+            'fieldnames': fieldnames,
+            'special': special,
         }
 
     def add_extern(self, name, type):
+        typestr, _ = self.typecodes.typestr(type)
         self.externs[name] = {
-            'typestr': None,
+            'typestr': typestr,
         }
 
 if __name__ == "__main__":
