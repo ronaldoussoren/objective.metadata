@@ -6,12 +6,22 @@ import operator
 import os
 import subprocess
 import platform
+import re
 
 
 from typecodes import TypeCodes
 from ast_tools import parse_int, constant_fold
 
 from objective.cparser import parse_file, c_ast
+
+LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
+DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
+INT_RE=re.compile('^\(?((?:0x[0-9A-Fa-f]+)|(?:\d+))[UL]*\)?$')
+FLOAT_RE=re.compile('^(\d+\.\d+)$')
+STR_RE=re.compile('^"(.*)"$')
+UNICODE_RE=re.compile('^@"(.*)"$')
+UNICODE2_RE=re.compile('^CFSTR"(.*)"$')
+ALIAS_RE=re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
@@ -75,6 +85,8 @@ class FrameworkParser (object):
         self.enum_values= {}
         self.structs = {}
         self.externs = {}
+        self.literals = {}
+        self.aliases = {}
 
     def _gen_includes(self, fp):
         fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
@@ -99,6 +111,8 @@ class FrameworkParser (object):
                 use_cpp=True, cpp_args=[
                     '-E', '-arch', self.arch, '-D__attribute__(x)=', '-D__asm(x)=',
                     '-D__typeof__(x)=long', '-U__BLOCKS__'], cpp_path='clang')
+
+            self.parse_defines(fname)
         finally:
             os.unlink(fname)
 
@@ -126,6 +140,8 @@ class FrameworkParser (object):
                 'enum':     self.enum_values,
                 'structs':  self.structs,
                 'externs':  self.externs,
+                'literals': self.literals,
+                'aliases':  self.aliases,
             },
         }
 
@@ -233,7 +249,7 @@ class FrameworkParser (object):
                 fieldnames.append(decl.name)
                 ts, _ = self.typecodes.typestr(decl.type)
                 if '?' in ts:
-                    print "Skip %s: contains function pointers"%(name,)
+                    #print "Skip %s: contains function pointers"%(name,)
                     return
 
         self.structs[name] = {
@@ -247,6 +263,74 @@ class FrameworkParser (object):
         self.externs[name] = {
             'typestr': typestr,
         }
+
+    def parse_defines(self, fname):
+        p = subprocess.Popen(
+            ['clang', '-E', '-Wp,-dD', fname],
+            stdout=subprocess.PIPE)
+        data = p.communicate()[0]
+        xit = p.wait()
+        if xit != 0:
+            print "WARNING: Cannot extract #defines from file"
+            return []
+
+        curfile = None
+        for ln in data.splitlines():
+            m = LINE_RE.match(ln)
+            if m is not None:
+                curfile = m.group(1)
+
+            if curfile is None or self.framework_path not in curfile:
+                # Ignore definitions in wrong file
+                continue
+
+            m = DEFINE_RE.match(ln)
+            if m is not None:
+                key = m.group(1)
+                if key.startswith('__'):
+                    # Ignore private definitions
+                    continue
+
+                value = m.group(2)
+                if value.endswith('\\'):
+                    # Complex macro, ignore
+                    print "IGNORE", repr(key), repr(value)
+                    continue
+
+                m = INT_RE.match(value)
+                if m is not None:
+                    self.enum_values[key] = int(m.group(1), 0)
+                    continue
+
+                m = FLOAT_RE.match(value)
+                if m is not None:
+                    self.literals[key] = float(m.group(1))
+                    continue
+
+                m = STR_RE.match(value)
+                if m is not None:
+                    self.literals[key] = m.group(1)
+                    continue
+
+                m = UNICODE_RE.match(value)
+                if m is not None:
+                    self.literals[key] = unicode(m.group(1))
+                    continue
+
+                m = UNICODE2_RE.match(value)
+                if m is not None:
+                    self.literals[key] = unicode(m.group(1))
+                    continue
+
+                m = ALIAS_RE.match(value)
+                if m is not None:
+                    value = m.group(1)
+                    if value not in ('extern', 'static', 'inline', 'float'):
+                        self.aliases[key] = m.group(1)
+                    continue
+
+                print "Warning: ignore #define %s %s"%(key, value)
+
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')

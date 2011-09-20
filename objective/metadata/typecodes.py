@@ -51,8 +51,6 @@ class TypeCodes (object):
             if special:
                 self._special.add(name)
 
-            print "add", name, self._definitions[name], special
-        
 
     def add_predefined(self, name, typestr, isspecial=False):
         self._definitions[name] = typestr
@@ -142,7 +140,7 @@ class TypeCodes (object):
             result.append(objc._C_ARY_B)
             dim = constant_fold(node.dim)
             if not isinstance(dim, c_ast.Constant):
-                print "Cannot process at", node.coord
+                print "WARNING: Cannot encode array type at", node.coord
                 return None, None
 
             result.append(dim.value)
