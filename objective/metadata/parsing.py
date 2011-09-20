@@ -51,11 +51,22 @@ class DefinitionVisitor (FilteredVisitor):
 
     def visit_Typedef(self, node):
         self.generic_visit(node)
-        # TODO: add type to typestr registry
+
 
         if not node.type.quals:
+            if isinstance(node.type, c_ast.TypeDecl):
+                if node.type.declname in self._parser.cftypes:
+                    self._parser.aliases[node.name] = node.type.declname
+
             if isinstance(node.type.type, c_ast.Struct):
                 self._parser.add_struct(node.name, node.type.type)
+
+            if isinstance(node.type, c_ast.PtrDecl):
+                if isinstance(node.type.type.type, c_ast.Struct):
+                    stp = node.type.type.type
+                    if stp.name is not None and stp.name.startswith('__'):
+                        if stp.decls is None:
+                            self._parser.add_cftype(node.name, node.type)
 
     def visit_Decl(self, node):
         self.generic_visit(node)
@@ -64,6 +75,9 @@ class DefinitionVisitor (FilteredVisitor):
 
         if isinstance(node.type, c_ast.TypeDecl) and 'extern' in node.storage:
             self._parser.add_extern(node.name, node.type)
+
+        if isinstance(node.type, c_ast.FuncDecl):
+            self._parser.add_function(node.name, node.type)
 
 class FrameworkParser (object):
     """
@@ -87,6 +101,8 @@ class FrameworkParser (object):
         self.externs = {}
         self.literals = {}
         self.aliases = {}
+        self.functions = {}
+        self.cftypes = {}
 
     def _gen_includes(self, fp):
         fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
@@ -137,11 +153,13 @@ class FrameworkParser (object):
             'headers':      self.headers,
 
             'definitions': {
-                'enum':     self.enum_values,
-                'structs':  self.structs,
-                'externs':  self.externs,
-                'literals': self.literals,
-                'aliases':  self.aliases,
+                'enum':      self.enum_values,
+                'structs':   self.structs,
+                'externs':   self.externs,
+                'literals':  self.literals,
+                'aliases':   self.aliases,
+                'functions': self.functions,
+                'cftypes':   self.cftypes,
             },
         }
 
@@ -235,6 +253,12 @@ class FrameworkParser (object):
 
             self.enum_values[item.name] = value
 
+    def add_cftype(self, name, type):
+        typestr, _ = self.typecodes.typestr(type)
+        self.cftypes[name] = {
+            'typestr': typestr,
+        }
+
     def add_struct(self, name, type):
         if name in self.typecodes:
             typestr = self.typecodes[name]
@@ -242,6 +266,7 @@ class FrameworkParser (object):
 
         else:
             typestr, special = self.typecodes.typestr(type)
+
 
         fieldnames = []
         if type.decls is not None:
@@ -330,7 +355,28 @@ class FrameworkParser (object):
                     continue
 
                 print "Warning: ignore #define %s %s"%(key, value)
+    
+    def add_function(self, name, type):
+        self.functions[name] = func = { 
+            'name': name,
+            'retval': None,
+            'args': [],
+        }
+        func['retval'] = self.typecodes.typestr(type.type)
+        for arg in type.args.params:
+            if isinstance(arg, c_ast.EllipsisParam):
+                func['variadic'] = True
+                continue
 
+            func['args'].append({
+                'name': arg.name,
+                'typestr': self.typecodes.typestr(arg.type),
+            })
+
+        if name.endswith('GetTypeID'):
+            tp = name[:-9] + 'Ref'
+            if tp in self.cftypes:
+                self.cftypes[tp]['gettypeid_func'] = name
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')
