@@ -7,6 +7,7 @@ import os
 import subprocess
 import platform
 import re
+import sys
 
 import objc
 
@@ -412,6 +413,11 @@ class FrameworkParser (object):
             'retval': None,
             'args': [],
         }
+
+        if 'Create' in name or 'Copy' in name:
+            func['already_cfretained'] = True
+
+
         if 'inline' in funcspec or '__inline__' in funcspec:
             func['inline'] = True
 
@@ -444,12 +450,29 @@ class FrameworkParser (object):
             if isinstance(tp, c_ast.PtrDecl) and isinstance(tp.type, c_ast.FuncDecl):
                 arginfo['function'] = self.extract_function(tp)
 
+            if iscferrorptr(tp):
+                # Function returns a CFError object by reference
+
+                # This is an output argument:
+                arginfo['type_modifier'] = objc._C_OUT
+
+                # Where we can pass in 'nil' if we don't want the error object
+                arginfo['null_accepted'] = True
+
+                # User must CFRelease the error object
+                arginfo['already_cfretained'] = True
+
             func['args'].append(arginfo)
 
         if name.endswith('GetTypeID'):
             tp = name[:-9] + 'Ref'
             if tp in self.cftypes:
                 self.cftypes[tp]['gettypeid_func'] = name
+
+        if func.get('variadic', False):
+            for a in func['args']:
+                if a['name'] == 'format' and a['typestr'] == '^{__CFString=}':
+                    a['printf_format'] = True
 
     def extract_block(self, blockptr):
         if not isinstance(blockptr.type, c_ast.FuncDecl):
@@ -494,6 +517,20 @@ class FrameworkParser (object):
                     'typestr': self.typecodes.typestr(a.type),
                 })
         return result
+
+def iscferrorptr(node):
+    if not isinstance(node, c_ast.PtrDecl):
+        return False
+
+    if not isinstance(node.type, c_ast.TypeDecl):
+        return False
+
+    t = node.type.type
+    if isinstance(t, c_ast.IdentifierType) and t.names[0] == 'CFErrorRef':
+        return True
+
+    return False
+
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')
