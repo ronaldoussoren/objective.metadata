@@ -8,7 +8,7 @@ TODO:
 """
 from objective.cparser import c_ast
 import objc
-from ast_tools import constant_fold
+from ast_tools import constant_fold, parse_int
 
 
 class _Visitor (c_ast.NodeVisitor):
@@ -19,16 +19,56 @@ class _Visitor (c_ast.NodeVisitor):
     def visit_Typedef(self, node):
         self._registry.add_typedef(node.name, node.type)
 
+    def visit_EnumeratorList(self, node):
+        prev_name = None
+        prev_value = None
+        for item in node.children():
+
+            value = item.value
+            if value is not None:
+                value = constant_fold(value, self._registry._enum_values)
+
+            if value is None:
+                if prev_value is not None:
+                    value = prev_value + 1
+
+                elif prev_name is not None:
+                    value = c_ast.BinaryOp(
+                        '+', prev_name, c_ast.Constant('int', 1))
+
+                else:
+                    value = 0
+
+            elif isinstance(value, c_ast.Constant) and value.type == 'int':
+                try:
+                    value = parse_int(value.value)
+                except ValueError:
+                    value = None
+
+            prev_name = item.name
+            if isinstance(value, int):
+                prev_value = value
+            else:
+                prev_value = None
+                continue
+
+            self._registry._enum_values[item.name] = value
+
+
 class TypeCodes (object):
     def __init__(self):
         self._definitions = {}
         self._special = set()
 
         self.__add_predefined()
+        self._enum_values = {}
 
     def fill_from_ast(self, ast):
         v = _Visitor(self)
         v.visit(ast)
+
+    def _add_enum(self, node):
+        pass
 
     def add_classdef(self, name):
         self._definitions[name] = objc._C_ID
@@ -138,7 +178,7 @@ class TypeCodes (object):
         if isinstance(node, c_ast.ArrayDecl):
             result = []
             result.append(objc._C_ARY_B)
-            dim = constant_fold(node.dim)
+            dim = constant_fold(node.dim, self._enum_values)
             if not isinstance(dim, c_ast.Constant):
                 print "WARNING: Cannot encode array type at", node.coord
                 return None, None
@@ -171,12 +211,12 @@ class TypeCodes (object):
         if isinstance(node, c_ast.Typename):
             return self.__typestr_for_node(node.type)
 
-        print node.coord
         raise ValueError(node)
         # XXX
         
 
     def __add_predefined(self):
+        self.add_predefined('_Bool', objc._C_BOOL)
         self.add_predefined('char', objc._C_CHR)
         self.add_predefined('signed char', objc._C_CHR)
         self.add_predefined('char signed', objc._C_CHR)
@@ -190,6 +230,7 @@ class TypeCodes (object):
         self.add_predefined('int', objc._C_INT)
         self.add_predefined('signed int', objc._C_INT)
         self.add_predefined('unsigned int', objc._C_UINT)
+        self.add_predefined('unsigned', objc._C_UINT)
         self.add_predefined('int signed', objc._C_INT)
         self.add_predefined('int unsigned', objc._C_UINT)
         self.add_predefined('long', objc._C_LNG)

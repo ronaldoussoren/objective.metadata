@@ -59,7 +59,6 @@ class DefinitionVisitor (FilteredVisitor):
 
         self._parser.typedefs[node.name] = node.type
 
-
         if not node.type.quals:
             if isinstance(node.type, c_ast.TypeDecl):
                 if node.type.declname in self._parser.cftypes:
@@ -93,10 +92,14 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/'):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None):
         self.framework = framework
         self.framework_path = '/%s.framework/'%(framework,)
-        self.start_header = framework + '.h'
+        if start_header is not None:
+            self.start_header = start_header
+
+        else:
+            self.start_header = '%s/%s.h'%(framework, framework)
         self.additional_headers = []
         self.arch = arch
         self.sdk = sdk
@@ -132,7 +135,7 @@ class FrameworkParser (object):
 
 
     def _gen_includes(self, fp):
-        fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
+        fp.write('#import <%s>\n'%(self.start_header,))
         for hdr in self.additional_headers:
             fp.write('#import <%s/%s>'%(self.framework, hdr))
 
@@ -152,8 +155,8 @@ class FrameworkParser (object):
         try:
             ast = parse_file(fname, 
                 use_cpp=True, cpp_args=[
-                    '-E', '-arch', self.arch, '-D__attribute__(x)=', '-D__asm(x)=',
-                    '-D__typeof__(x)=long', ], cpp_path='clang')
+                    '-E', '-arch', self.arch, '-D__attribute__(x)=',
+                    '-D__typeof__(x)=long',], cpp_path='clang')
 
             self.parse_defines(fname)
         finally:
@@ -253,7 +256,7 @@ class FrameworkParser (object):
 
             value = item.value
             if value is not None:
-                value = constant_fold(value)
+                value = constant_fold(value, self.enum_values)
 
             if value is None:
                 if prev_value is not None:
@@ -533,7 +536,7 @@ def iscferrorptr(node):
 
 
 if __name__ == "__main__":
-    p = FrameworkParser('CoreFoundation')
+    p = FrameworkParser('CoreGraphics', start_header='ApplicationServices/ApplicationServices.h')
     p.parse()
 
     import pprint
