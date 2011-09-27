@@ -27,4 +27,9 @@ setup(
     platforms='MacOSX',
     namespace_packages = ['objective'],
     packages=['objective', 'objective.metadata'],
+    entry_points={
+        'console_scripts': [
+            "objective-metadata = objective.metadata.script:main",
+        ],
+    },
 )

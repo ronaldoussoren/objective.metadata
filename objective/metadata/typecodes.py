@@ -16,6 +16,14 @@ class _Visitor (c_ast.NodeVisitor):
         super(_Visitor, self).__init__()
         self._registry = registry
 
+    def visit_Interface(self, node):
+        self.generic_visit(node)
+
+        self._registry._classes.add(node.name)
+
+    def visit_ForwardClass(self, node):
+        self._registry._classes.add(node.name)
+
     def visit_Typedef(self, node):
         self._registry.add_typedef(node.name, node.type)
 
@@ -62,6 +70,7 @@ class TypeCodes (object):
 
         self.__add_predefined()
         self._enum_values = {}
+        self._classes = set()
 
     def fill_from_ast(self, ast):
         v = _Visitor(self)
@@ -194,6 +203,10 @@ class TypeCodes (object):
             return ''.join(result), special
 
         if isinstance(node, c_ast.PtrDecl):
+            if isinstance(node.type.type, c_ast.IdentifierType):
+                if node.type.type.names[0] in self._classes:
+                    return objc._C_ID, special
+
             t, s = self.__typestr_for_node(node.type)
             return objc._C_PTR + t, s
 
@@ -202,7 +215,10 @@ class TypeCodes (object):
 
 
         if isinstance(node, c_ast.IdentifierType):
-            key = ' '.join(node.names)
+            if isinstance(node.names, str):
+                key = node.names
+            else:
+                key = ' '.join(node.names)
             return self._definitions[key], key in self._special
         
         if isinstance(node, c_ast.BlockPtrDecl):
@@ -243,8 +259,11 @@ class TypeCodes (object):
         self.add_predefined('long signed', objc._C_LNG)
         self.add_predefined('long unsigned', objc._C_ULNG)
         self.add_predefined('long long', objc._C_LNG_LNG)
+        self.add_predefined('int long long', objc._C_LNG_LNG)
         self.add_predefined('signed long long', objc._C_LNG_LNG)
+        self.add_predefined('int signed long long', objc._C_LNG_LNG)
         self.add_predefined('unsigned long long', objc._C_ULNG_LNG)
+        self.add_predefined('int unsigned long long', objc._C_ULNG_LNG)
         self.add_predefined('long long signed', objc._C_LNG_LNG)
         self.add_predefined('long long unsigned', objc._C_ULNG_LNG)
         self.add_predefined('bool', objc._C_BOOL)

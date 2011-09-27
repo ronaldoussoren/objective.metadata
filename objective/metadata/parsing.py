@@ -59,6 +59,9 @@ class DefinitionVisitor (FilteredVisitor):
 
         self._parser.typedefs[node.name] = node.type
 
+        if isinstance(node.type, c_ast.FuncDecl):
+            return
+
         if not node.type.quals:
             if isinstance(node.type, c_ast.TypeDecl):
                 if node.type.declname in self._parser.cftypes:
@@ -223,14 +226,14 @@ class FrameworkParser (object):
             self._gen_includes(fp)
 
             fp.write("#include <stdio.h>\n")
-            fp.write("int main(void) {")
-            fp.write("   printf(\"%%d\n\", %s);\n"%(name,))
+            fp.write("int main(void) {\n")
+            fp.write("   printf(\"%%lld\\n\", (long long)%s);\n"%(name,))
             fp.write("   return 0;\n")
             fp.write("}\n")
 
         p = subprocess.Popen(['clang', 
             '-o', fname[:-2], 
-            'arch', self.arch,
+            '-arch', self.arch,
             fname,
             '-framework', self.framework])
         xit = p.wait()
@@ -242,9 +245,11 @@ class FrameworkParser (object):
         p = subprocess.Popen(['./' + fname[:-2]], stdout=subprocess.PIPE)
         data = p.communicate()[0]
         xit = p.wait()
+        os.unlink(fname[:-2])
         if xit != 0:
             print "WARNING: Cannot calculate value for '%s'"%(name,)
             return None
+
 
         return int(data.strip())
 
