@@ -54,6 +54,8 @@ class DefinitionVisitor (FilteredVisitor):
     def visit_Typedef(self, node):
         self.generic_visit(node)
 
+        self._parser.typedefs[node.name] = node.type
+
 
         if not node.type.quals:
             if isinstance(node.type, c_ast.TypeDecl):
@@ -106,6 +108,8 @@ class FrameworkParser (object):
         self.functions = {}
         self.cftypes = {}
         self.func_macros = []
+        self.typedefs = {}
+
 
     def _gen_includes(self, fp):
         fp.write('#import <%s/%s>\n'%(self.framework, self.start_header))
@@ -129,7 +133,7 @@ class FrameworkParser (object):
             ast = parse_file(fname, 
                 use_cpp=True, cpp_args=[
                     '-E', '-arch', self.arch, '-D__attribute__(x)=', '-D__asm(x)=',
-                    '-D__typeof__(x)=long', '-U__BLOCKS__'], cpp_path='clang')
+                    '-D__typeof__(x)=long', ], cpp_path='clang')
 
             self.parse_defines(fname)
         finally:
@@ -364,7 +368,6 @@ class FrameworkParser (object):
             m = FUNC_DEFINE_RE.match(ln)
             if m is not None:
                 proto = m.group(1)
-                print proto
                 body = m.group(2).strip()
                 if body == '\\':
                     body = body[ln_idx+1].strip()
@@ -396,15 +399,75 @@ class FrameworkParser (object):
                 func['variadic'] = True
                 continue
 
-            func['args'].append({
+            arginfo = {
                 'name': arg.name,
                 'typestr': self.typecodes.typestr(arg.type)[0],
-            })
+            }
+
+            tp = arg.type
+            if isinstance(tp, c_ast.TypeDecl) and isinstance(tp.type, c_ast.IdentifierType):
+                try:
+                    tp = self.typedefs[tp.type.names[0]]
+                except KeyError:
+                    pass
+
+            if isinstance(tp, c_ast.BlockPtrDecl):
+                arginfo['block'] = self.extract_block(tp)
+
+
+            if isinstance(tp, c_ast.PtrDecl) and isinstance(tp.type, c_ast.FuncDecl):
+                arginfo['function'] = self.extract_function(tp)
+
+            func['args'].append(arginfo)
 
         if name.endswith('GetTypeID'):
             tp = name[:-9] + 'Ref'
             if tp in self.cftypes:
                 self.cftypes[tp]['gettypeid_func'] = name
+
+    def extract_block(self, blockptr):
+        if not isinstance(blockptr.type, c_ast.FuncDecl):
+            print "WARNING: Cannot extract block info"
+            return {}
+
+        func = blockptr.type
+
+        result = {}
+        result['retval'] = {
+            'typestr': self.typecodes.typestr(func.type),
+        }
+        result['args'] = []
+        if func.args is not None:
+            for a in func.args.params:
+                if isinstance(a, c_ast.EllipsisParam):
+                    result['variadic'] = True
+                    continue
+                result['args'].append({
+                    'typestr': self.typecodes.typestr(a.type),
+                })
+        return result
+
+    def extract_function(self, functionptr):
+        if not isinstance(functionptr.type, c_ast.FuncDecl):
+            print "WARNING: Cannot extract function info"
+            return {}
+
+        func = functionptr.type
+
+        result = {}
+        result['retval'] = {
+            'typestr': self.typecodes.typestr(func.type),
+        }
+        result['args'] = []
+        if func.args is not None:
+            for a in func.args.params:
+                if isinstance(a, c_ast.EllipsisParam):
+                    result['variadic'] = True
+                    continue
+                result['args'].append({
+                    'typestr': self.typecodes.typestr(a.type),
+                })
+        return result
 
 if __name__ == "__main__":
     p = FrameworkParser('CoreFoundation')

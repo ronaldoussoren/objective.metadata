@@ -164,7 +164,14 @@ class TypeCodes (object):
         if isinstance(node, c_ast.IdentifierType):
             key = ' '.join(node.names)
             return self._definitions[key], key in self._special
+        
+        if isinstance(node, c_ast.BlockPtrDecl):
+            return objc._C_ID + objc._C_UNDEF, special
 
+        if isinstance(node, c_ast.Typename):
+            return self.__typestr_for_node(node.type)
+
+        print node.coord
         raise ValueError(node)
         # XXX
         
