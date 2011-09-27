@@ -223,3 +223,7 @@ class TypeCodes (object):
         self.add_predefined('int8_t',    objc._C_CHAR_AS_INT, True)
         self.add_predefined('UniChar',   objc._C_UNICHAR, True)
 
+        # CFTypeRef is a 'void*' in the headers, but should be treated as
+        # an object pointer by the bridge
+        self.add_predefined('CFTypeRef',   objc._C_ID, True)
+

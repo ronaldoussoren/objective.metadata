@@ -8,6 +8,8 @@ import subprocess
 import platform
 import re
 
+import objc
+
 
 from typecodes import TypeCodes
 from ast_tools import parse_int, constant_fold
@@ -109,6 +111,23 @@ class FrameworkParser (object):
         self.cftypes = {}
         self.func_macros = []
         self.typedefs = {}
+        self._func_protos = {}
+        self._init_func_protos()
+
+
+    def _init_func_protos(self):
+        self._func_protos['CFComparatorFunction'] = {
+            # This function typedef has an prototype that would
+            # require manual annotation, tweak the prototype to
+            # be more useful
+            'retval': { 'typestr': objc._C_ULNG },
+            'args': [
+                { 'typestr': objc._C_ID },
+                { 'typestr': objc._C_ID },
+                { 'typestr': objc._C_ID },
+            ]
+        }
+
 
 
     def _gen_includes(self, fp):
@@ -386,6 +405,9 @@ class FrameworkParser (object):
 
     
     def add_function(self, name, type, funcspec):
+        if name.startswith('__'):
+            return
+
         self.functions[name] = func = { 
             'retval': None,
             'args': [],
@@ -406,10 +428,14 @@ class FrameworkParser (object):
 
             tp = arg.type
             if isinstance(tp, c_ast.TypeDecl) and isinstance(tp.type, c_ast.IdentifierType):
-                try:
-                    tp = self.typedefs[tp.type.names[0]]
-                except KeyError:
-                    pass
+                if tp.type.names[0] in self._func_protos:
+                    arginfo['function'] = self._func_protos[tp.type.names[0]]
+
+                else:
+                    try:
+                        tp = self.typedefs[tp.type.names[0]]
+                    except KeyError:
+                        pass
 
             if isinstance(tp, c_ast.BlockPtrDecl):
                 arginfo['block'] = self.extract_block(tp)
