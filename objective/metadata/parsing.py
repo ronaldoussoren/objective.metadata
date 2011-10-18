@@ -50,6 +50,11 @@ class DefinitionVisitor (FilteredVisitor):
     A NodeVisitor that calls back to the framework parser when it
     locates interesting definitions.
     """
+    def visit_Protocol(self, node):
+        self.generic_visit(node)
+
+        self._parser.add_protocol(node)
+
     def visit_EnumeratorList(self, node):
         self.generic_visit(node)
         self._parser.append_enumerator_list(node)
@@ -88,6 +93,18 @@ class DefinitionVisitor (FilteredVisitor):
         if isinstance(node.type, c_ast.FuncDecl):
             self._parser.add_function(node.name, node.type, node.funcspec)
 
+
+    def visit_Category(self, node):
+        self.generic_visit(node)
+
+        if node.name == 'NSObject' and node.categorie_name: #XXX
+            self._parser.add_informal_protocol(node)
+
+        self._parser.add_category(node)
+
+    def visit_Interface(self, node):
+        self._parser.add_interface(node)
+
 class FrameworkParser (object):
     """
     Parser for framework headers. 
@@ -118,6 +135,9 @@ class FrameworkParser (object):
         self.cftypes = {}
         self.func_macros = []
         self.typedefs = {}
+        self.formal_protocols = {}
+        self.informal_protocols = {}
+        self.classes = {}
         self._func_protos = {}
         self._init_func_protos()
 
@@ -194,6 +214,9 @@ class FrameworkParser (object):
                 'functions': self.functions,
                 'cftypes':   self.cftypes,
                 'func_macros': self.func_macros,
+                'formal_protocols': self.formal_protocols,
+                'informal_protocols': self.informal_protocols,
+                'classes': self.classes,
             },
         }
 
@@ -526,6 +549,202 @@ class FrameworkParser (object):
                 })
         return result
 
+    def extract_methoddecl(self, decl):
+        """
+        Return interesting information from a MethodDecl
+        """
+        if decl.retval is None:
+            tc = '@', False
+        else:
+            tc = self.typecodes.typestr(decl.retval.type)
+        meth = {
+            'selector': decl.selector,
+            'class_method': decl.class_method,
+            'retval': {
+                'typestr': tc[0],
+                'typestr_special': tc[1],
+            },
+            'args': [
+            ],
+        }
+        for a in decl.args:
+            if isinstance(a, c_ast.EllipsisParam):
+                meth['variadic'] = True
+                continue
+
+            if a is None:
+                tc = '@', False
+            else:
+                tc = self.typecodes.typestr(a.type)
+            meth['args'].append({
+                'typestr': tc[0],
+                'typestr_special': tc[1],
+            })
+
+        return meth
+
+
+    def add_protocol(self, node):
+        self.formal_protocols[node.name] = protocol = {
+            'implements': node.protocols,
+            'methods': [],
+            'properties': [],
+        }
+        cur_visibility='public'
+        cur_required=True
+
+        for decl in node.decls:
+            if isinstance(decl, c_ast.Visibility):
+                if decl.kind in ('@public', '@private', '@protected', '@package'):
+                    cur_visibility = decl.kind[1:]
+                elif decl.kind in ('@required', '@optional'):
+                    cur_required = (decl.kind == '@required')
+                else:
+                    raise ValueError(node.kind)
+
+            elif isinstance(decl, c_ast.MethodDecl):
+                meth = self.extract_methoddecl(decl)
+                meth['visibility'] = cur_visibility
+                meth['required'] = cur_required
+                protocol['methods'].append(meth)
+
+            elif isinstance(decl, c_ast.Property):
+                for item in decl.decl:
+                    tc = self.typecodes.typestr(item.type)
+                    protocol['properties'].append({
+                        'name': item.name,
+                        'typestr': tc[0],
+                        'typestr_special': tc[1],
+                    })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+    def add_informal_protocol(self, node):
+        self.informal_protocols[node.categorie_name] = protocol = {
+            'implements': node.protocols,
+            'methods': [],
+            'properties': [],
+        }
+        cur_visibility='public'
+
+        for decl in node.decls:
+            if isinstance(decl, c_ast.Visibility):
+                if decl.kind in ('@public', '@private', '@protected', '@package'):
+                    cur_visibility = decl.kind[1:]
+                else:
+                    raise ValueError(node.kind)
+
+            elif isinstance(decl, c_ast.MethodDecl):
+                meth = self.extract_methoddecl(decl)
+                meth['visibility'] = cur_visibility
+                protocol['methods'].append(meth)
+
+            elif isinstance(decl, c_ast.Property):
+                for item in decl.decl:
+                    tc = self.typecodes.typestr(item.type)
+                    protocol['properties'].append({
+                        'name': item.name,
+                        'typestr': tc[0],
+                        'typestr_special': tc[1],
+                    })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+    def add_interface(self, node):
+        if node.name in self.classes:
+            class_info = self.classes[node.name]
+        else:
+            class_info = self.classes[node.name] = {
+                    'name': node.name,
+                    'super': node.super,
+                    'protocols': set(),
+                    'methods': [],
+                    'categories': [],
+                    'properties': [],
+            }
+        class_info['protocols'].update(node.protocol)
+
+        cur_visibility='public'
+
+        for decl in node.decls:
+            if isinstance(decl, c_ast.Visibility):
+                if decl.kind in ('@public', '@private', '@protected', '@package'):
+                    cur_visibility = decl.kind[1:]
+                else:
+                    raise ValueError(node.kind)
+
+            elif isinstance(decl, c_ast.MethodDecl):
+                meth = self.extract_methoddecl(decl)
+                meth['visibility'] = cur_visibility
+                class_info['methods'].append(meth)
+
+            elif isinstance(decl, c_ast.Property):
+                for item in decl.decl:
+                    tc = self.typecodes.typestr(item.type)
+                    class_info['properties'].append({
+                        'name': item.name,
+                        'typestr': tc[0],
+                        'typestr_special': tc[1],
+                    })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+    def add_category(self, node):
+        try:
+            class_info = self.classes[node.name]
+        except KeyError:
+            class_info = self.classes[node.name] = {
+                    'name': node.name,
+                    'methods': [],
+                    'protocols': set(),
+                    'properties': [],
+            }
+
+        if node.protocols:
+            class_info['protocols'].update(node.protocols)
+
+        cur_visibility='public'
+
+        for decl in node.decls:
+            if isinstance(decl, c_ast.Visibility):
+                if decl.kind in ('@public', '@private', '@protected', '@package'):
+                    cur_visibility = decl.kind[1:]
+                else:
+                    raise ValueError(node.kind)
+
+            elif isinstance(decl, c_ast.MethodDecl):
+                meth = self.extract_methoddecl(decl)
+                meth['visibility'] = cur_visibility
+                class_info['methods'].append(meth)
+
+            elif isinstance(decl, c_ast.Property):
+                for item in decl.decl:
+                    tc = self.typecodes.typestr(item.type)
+                    class_info['properties'].append({
+                        'name': item.name,
+                        'typestr': tc[0],
+                        'typestr_special': tc[1],
+                    })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+
+
+
+
+
 def iscferrorptr(node):
     if not isinstance(node, c_ast.PtrDecl):
         return False
@@ -541,7 +760,7 @@ def iscferrorptr(node):
 
 
 if __name__ == "__main__":
-    p = FrameworkParser('CoreGraphics', start_header='ApplicationServices/ApplicationServices.h')
+    p = FrameworkParser('AppKit', start_header='AppKit/AppKit.h')
     p.parse()
 
     import pprint
