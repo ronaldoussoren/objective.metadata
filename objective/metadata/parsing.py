@@ -19,14 +19,18 @@ from objective.cparser import parse_file, c_ast
 
 LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
 DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
-INT_RE=re.compile('^\(?((?:0x[0-9A-Fa-f]+)|(?:\d+))[UL]*\)?$')
+INT_RE=re.compile('^\(?((?:-?0x[0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
 FLOAT_RE=re.compile('^(\d+\.\d+)$')
 STR_RE=re.compile('^"(.*)"$')
 UNICODE_RE=re.compile('^@"(.*)"$')
-UNICODE2_RE=re.compile('^CFSTR"(.*)"$')
+UNICODE2_RE=re.compile('^CFSTR\("(.*)"\)$')
 ALIAS_RE=re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
+NULL_VALUE=re.compile(r'\(\([A-Za-z0-9]+\)NULL\)')
 
 FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
+ERR_SUB_DEFINE_RE=re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
+ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
+SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\(([A-Za-z0-9_]*), .*\)")
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
@@ -67,7 +71,7 @@ class DefinitionVisitor (FilteredVisitor):
         if isinstance(node.type, c_ast.FuncDecl):
             return
 
-        if not node.type.quals:
+        if not getattr(node.type, "quals", None):
             if isinstance(node.type, c_ast.TypeDecl):
                 if node.type.declname in self._parser.cftypes:
                     self._parser.aliases[node.name] = node.type.declname
@@ -112,7 +116,7 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=()):
         self.framework = framework
         self.framework_path = '/%s.framework/'%(framework,)
         if start_header is not None:
@@ -120,6 +124,8 @@ class FrameworkParser (object):
 
         else:
             self.start_header = '%s/%s.h'%(framework, framework)
+
+        self.preheaders = preheaders
         self.additional_headers = []
         self.arch = arch
         self.sdk = sdk
@@ -138,6 +144,7 @@ class FrameworkParser (object):
         self.formal_protocols = {}
         self.informal_protocols = {}
         self.classes = {}
+        self.called_definitions = {}
         self._func_protos = {}
         self._init_func_protos()
 
@@ -158,6 +165,8 @@ class FrameworkParser (object):
 
 
     def _gen_includes(self, fp):
+        for hdr in self.preheaders:
+            fp.write('#import <%s>\n'%(hdr,))
         fp.write('#import <%s>\n'%(self.start_header,))
         for hdr in self.additional_headers:
             fp.write('#import <%s/%s>'%(self.framework, hdr))
@@ -178,6 +187,7 @@ class FrameworkParser (object):
         try:
             ast = parse_file(fname, 
                 use_cpp=True, cpp_args=[
+                    '-arch', self.arch, '-isysroot', self.sdk,
                     '-E', '-arch', self.arch, '-D__attribute__(x)=',
                     '-D__typeof__(x)=long',], cpp_path='clang')
 
@@ -217,6 +227,7 @@ class FrameworkParser (object):
                 'formal_protocols': self.formal_protocols,
                 'informal_protocols': self.informal_protocols,
                 'classes': self.classes,
+                'called_definitions': self.called_definitions,
             },
         }
 
@@ -257,6 +268,7 @@ class FrameworkParser (object):
         p = subprocess.Popen(['clang', 
             '-o', fname[:-2], 
             '-arch', self.arch,
+            '-isysroot', self.sdk,
             fname,
             '-framework', self.framework])
         xit = p.wait()
@@ -298,7 +310,14 @@ class FrameworkParser (object):
                     value = 0
 
             elif isinstance(value, c_ast.Constant) and value.type == 'int':
-                value = parse_int(value.value)
+                if value.value.startswith('!'):
+                    value = parse_int(value.value[1:])
+                    if value:
+                        value = 0
+                    else:
+                        value = 1
+                else:
+                    value = parse_int(value.value)
 
             prev_name = item.name
             if isinstance(value, int):
@@ -350,7 +369,7 @@ class FrameworkParser (object):
 
     def parse_defines(self, fname):
         p = subprocess.Popen(
-            ['clang', '-E', '-Wp,-dD', fname],
+            ['clang', '-arch', self.arch, '-isysroot', self.sdk, '-E', '-Wp,-dD', fname],
             stdout=subprocess.PIPE)
         data = p.communicate()[0]
         xit = p.wait()
@@ -380,6 +399,10 @@ class FrameworkParser (object):
                 if value.endswith('\\'):
                     # Complex macro, ignore
                     print "IGNORE", repr(key), repr(value)
+                    continue
+
+                if not value:
+                    # Ignore empty macros
                     continue
 
                 m = INT_RE.match(value)
@@ -412,6 +435,40 @@ class FrameworkParser (object):
                     value = m.group(1)
                     if value not in ('extern', 'static', 'inline', 'float'):
                         self.aliases[key] = m.group(1)
+                    continue
+
+                if '__attribute__' in value:
+                    # It's fairly common to define macros for attributes,
+                    # like '#define AM_UNUSED __attribute__((unused))'
+                    continue
+
+                if value.startswith('CFUUIDGetConstantUUIDWithBytes('):
+                    # Constant CFUUID definitions, used in a number of
+                    # frameworks
+                    self.called_definitions[key] = value.replace('NULL', 'None')
+                    continue
+
+                m = ERR_SUB_DEFINE_RE.match(value)
+                if m is not None:
+                    v = parse_int(m.group(1))
+                    self.enum_values[key] = (v&0xfff)<<14
+                    continue
+
+                m = ERR_SYSTEM_DEFINE_RE.match(value)
+                if m is not None:
+                    v = parse_int(m.group(1))
+                    self.enum_values[key] = (v&0x3f)<<26
+                    continue
+
+                m = NULL_VALUE.match(value)
+                if m is not None:
+                    # For #define's like this:  #define kDSpEveryContext ((DSpContextReference)NULL)
+                    self.literals[key] = None
+                    continue
+
+                m = SC_SCHEMA_RE.match(value)
+                if m is not None:
+                    self.externs[key] = objc._C_ID
                     continue
 
                 print "Warning: ignore #define %s %s"%(key, value)
@@ -453,7 +510,9 @@ class FrameworkParser (object):
             func['inline'] = True
 
         func['retval'] = self.typecodes.typestr(type.type)[0]
-        for arg in type.args.params:
+        if type.args is None:
+            func['xxx-no-params'] = True
+        for arg in (type.args.params if type.args is not None else []):
             if isinstance(arg, c_ast.EllipsisParam):
                 func['variadic'] = True
                 continue
@@ -657,6 +716,7 @@ class FrameworkParser (object):
                 pass
 
     def add_interface(self, node):
+
         if node.name in self.classes:
             class_info = self.classes[node.name]
         else:
@@ -672,7 +732,7 @@ class FrameworkParser (object):
 
         cur_visibility='public'
 
-        for decl in node.decls:
+        for decl in node.decls or []:
             if isinstance(decl, c_ast.Visibility):
                 if decl.kind in ('@public', '@private', '@protected', '@package'):
                     cur_visibility = decl.kind[1:]
@@ -760,7 +820,7 @@ def iscferrorptr(node):
 
 
 if __name__ == "__main__":
-    p = FrameworkParser('AppKit', start_header='AppKit/AppKit.h')
+    p = FrameworkParser('AVFoundation', start_header='AVFoundation/AVFoundation.h')
     p.parse()
 
     import pprint

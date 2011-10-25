@@ -188,6 +188,10 @@ class TypeCodes (object):
             result = []
             result.append(objc._C_ARY_B)
             dim = constant_fold(node.dim, self._enum_values)
+            if dim is None:
+                t, s = self.__typestr_for_node(node.type)
+                return objc._C_PTR + t, s
+
             if not isinstance(dim, c_ast.Constant):
                 print "WARNING: Cannot encode array type at", node.coord
                 return None, None

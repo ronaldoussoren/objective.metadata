@@ -7,7 +7,16 @@ TODO:
 import operator
 from objective.cparser import c_ast
 
+def integer_not(value):
+    if value:
+        return 0
+    else:
+        return 1
+
 OPERATORS = {
+    '&':    operator.and_,
+    '|':    operator.or_,
+    '!':    integer_not,
     '+':    operator.add,
     '-':    operator.sub,
     '*':    operator.mul,
