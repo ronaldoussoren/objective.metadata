@@ -4,5 +4,6 @@ syntax: glob
 *.pyo
 *.egg-info
 *.swp
+info-files
 
 objective/metadata/yacctab.py
