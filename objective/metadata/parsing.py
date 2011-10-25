@@ -30,7 +30,7 @@ NULL_VALUE=re.compile(r'\(\([A-Za-z0-9]+\)NULL\)')
 FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
 ERR_SUB_DEFINE_RE=re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
-SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\(([A-Za-z0-9_]*), .*\)")
+SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
