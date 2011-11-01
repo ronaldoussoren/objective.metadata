@@ -7,6 +7,18 @@ TODO:
 import operator
 from objective.cparser import c_ast
 
+# Used for limited sizeof() support
+SIZES = {
+    '__int64_t': '4',
+    '__int32_t': '4',
+    '__int16_t': '2',
+    '__int8_t': '1',
+    '__uint64_t': '4',
+    '__uint32_t': '4',
+    '__uint16_t': '2',
+    '__uint8_t': '1',
+}
+
 def integer_not(value):
     if value:
         return 0
@@ -20,15 +32,16 @@ OPERATORS = {
     '+':    operator.add,
     '-':    operator.sub,
     '*':    operator.mul,
+    '%':    operator.mod,
     '/':    operator.floordiv,
     '<<':   operator.lshift,
     '>>':   operator.rshift,
-    '==':   operator.eq,
-    '<':   operator.lt,
-    '>':   operator.gt,
-    '<=':   operator.le,
-    '>=':   operator.ge,
-    '!=':   operator.ne,
+    '==':   lambda x, y: int(x == y),
+    '<':   lambda x, y: int(x < y),
+    '>':   lambda x, y: int(x > y),
+    '<=':   lambda x, y: int(x <= y),
+    '>=':   lambda x, y: int(x >= y),
+    '!=':   lambda x, y: int(x != y),
 }
 
 def parse_int(value):
@@ -73,6 +86,13 @@ def constant_fold(node, enum_table = None):
 
     if isinstance(node, c_ast.UnaryOp):
         expr = constant_fold(node.expr, enum_table)
+        if node.op == 'sizeof':
+            try:
+                return c_ast.Constant('int', 
+                        SIZES[' '.join(node.expr.type.type.names)], node.coord)
+            except:
+                pass
+
         if isinstance(expr, c_ast.Constant):
             return c_ast.Constant(expr.type, node.op + expr.value, node.coord)
         elif expr is not node.expr:
