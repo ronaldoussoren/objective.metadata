@@ -6,5 +6,6 @@ syntax: glob
 *.swp
 info-files
 exceptions
+metadata
 
 objective/metadata/yacctab.py

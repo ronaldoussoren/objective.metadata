@@ -216,7 +216,7 @@ class FrameworkParser (object):
             'sdk':          self.sdk,
             'release':      platform.mac_ver()[0],
 
-            'headers':      self.headers,
+            'headers':      list(sorted(self.headers)),
 
             'definitions': {
                 'enum':      self.enum_values,

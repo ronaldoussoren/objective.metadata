@@ -1,6 +1,10 @@
+from __future__ import absolute_import
 import sys
 import pprint
+import textwrap
 from xml.etree import ElementTree
+
+from . import storage
 
 def bool_attr(node, key, default=False):
     if default:
@@ -24,8 +28,8 @@ BOOLEAN_ATTRIBUTES=[
 
 def merge_xml(exceptions_fn, xml_fn):
     xml = ElementTree.parse(xml_fn)
-    with open(exceptions_fn) as fp:
-        exceptions = eval(fp.read())
+
+    exceptions = storage.load_framework_info(exceptions_fn)
 
     update_classes(exceptions, xml)
     update_cftypes(exceptions, xml)
@@ -33,9 +37,10 @@ def merge_xml(exceptions_fn, xml_fn):
     update_protocols(exceptions, xml, 'formal_protocols')
     update_functions(exceptions, xml)
 
-    with open(exceptions_fn, 'w') as fp:
-        pprint.pprint(exceptions, stream=fp)
-
+    storage.save_framework_info(exceptions_fn, textwrap.dedent("""\
+        # objective.metada exceptions file, see its document
+        # for information on how to update this file.
+        """), exceptions)
 
 def update_functions(exceptions, xml):
     for funcname, funcdata in exceptions['definitions'].get('functions',{}).items():

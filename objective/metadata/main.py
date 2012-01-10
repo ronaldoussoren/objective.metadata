@@ -14,7 +14,7 @@ from . import merge_xml
 from . import scan
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
-#parser.add_argument("--verbose", action="store_true", help="print progress information", default=False)
+parser.add_argument("--verbose", action="store_true", help="print progress information", default=False)
 parser.add_argument("--ini-file", metavar="FILE", help="configuration file", default="metadata/metadata.ini")
 parser.add_argument("--ini-section", metavar="SECTION", action="append", default=[], help="section to use (default: use all sections)")
 
@@ -40,41 +40,41 @@ def parse_ini(ini_file, ini_sections):
     if not ini_sections:
         ini_sections = cfg.sections()
 
-    print ini_sections
-
     for section in ini_sections:
         info = {
-                'framework': cfg.get(section, 'framework'),
+                "framework": cfg.get(section, "framework"),
         }
-        if cfg.has_option(section, 'raw'):
-            info['raw'] = os.path.join(ini_dir, cfg.get(section, 'raw'))
+        if cfg.has_option(section, "raw"):
+            info["raw"] = os.path.join(ini_dir, cfg.get(section, "raw"))
         else:
-            info['raw'] = os.path.join(ini_dir, 'raw')
+            info["raw"] = os.path.join(ini_dir, "raw")
 
-        if cfg.has_option(section, 'exceptions'):
-            info['exceptions'] = os.path.join(ini_dir, cfg.get(section, 'exceptions'))
+        if cfg.has_option(section, "exceptions"):
+            info["exceptions"] = os.path.join(ini_dir, cfg.get(section, "exceptions"))
         else:
-            info['exceptions'] = os.path.join(ini_dir, info['framework'] + '.fwinfo')
+            info["exceptions"] = os.path.join(ini_dir, info["framework"] + ".fwinfo")
 
-        if cfg.has_option(section, 'compiled'):
-            info['compiled'] = os.path.join(ini_dir, cfg.get(section, 'exceptions'))
+        if cfg.has_option(section, "compiled"):
+            info["compiled"] = os.path.join(ini_dir, cfg.get(section, "exceptions"))
         else:
-            info['compiled'] = os.path.join(ini_dir, '..', 'Lib', info['framework'], '_metadata2.py')
+            info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["framework"], "_metadata.py")
 
-        if cfg.has_option(section, 'start-header'):
-            info['start-header'] = cfg.get(section, 'start-header')
-        else:
-            info['start-header'] = None
+            info["compiled"] = os.path.join("metadata", info["framework"] + ".py")
 
-        if cfg.has_option(section, 'pre-headers'):
-            info['pre-headers'] = [x.strip() for x in cfg.get(section, 'pre-headers').split(',')]
+        if cfg.has_option(section, "start-header"):
+            info["start-header"] = cfg.get(section, "start-header")
         else:
-            info['pre-headers'] = []
+            info["start-header"] = None
 
-        if cfg.has_option(section, 'post-headers'):
-            info['post-headers'] = [x.strip() for x in cfg.get(section, 'post-headers').split(',')]
+        if cfg.has_option(section, "pre-headers"):
+            info["pre-headers"] = [x.strip() for x in cfg.get(section, "pre-headers").split(",")]
         else:
-            info['post-headers'] = []
+            info["pre-headers"] = []
+
+        if cfg.has_option(section, "post-headers"):
+            info["post-headers"] = [x.strip() for x in cfg.get(section, "post-headers").split(",")]
+        else:
+            info["post-headers"] = []
 
 
         yield info
@@ -83,28 +83,37 @@ def main():
     args = parser.parse_args()
 
     for info in parse_ini(args.ini_file, args.ini_section):
-        if args.command == 'scan':
-            print "scan", info
+        if args.command == "scan":
+            if args.verbose:
+                print "Scan framework=%r sdk=%r arch=%r"%(
+                        info["framework"], args.sdk_root, args.arch)
+
             osver = args.sdk_root
             if osver is None:
                 osver = platform.mac_ver()[0]
             else:
                 osver = os.path.basename(osver)[6:-4]
-            raw_fn = os.path.join(info['raw'], '%s-%s.fwinfo'%(args.arch, osver))
-            scan.scan_headers(raw_fn, info['exceptions'], info['framework'],
-                    info['start-header'], 
-                    info['pre-headers'], 
-                    info['post-headers'], 
+            raw_fn = os.path.join(info["raw"], "%s-%s.fwinfo"%(args.arch, osver))
+            scan.scan_headers(raw_fn, info["exceptions"], info["framework"],
+                    info["start-header"], 
+                    info["pre-headers"], 
+                    info["post-headers"], 
                     args.sdk_root, 
                     args.arch)
 
-        elif args.command == 'import':
-            merge_xml.merge_xml(info['exceptions'], args.bridgesupport_file)
+        elif args.command == "import":
+            if args.verbose:
+                print "Import framework=%r bridgesupport=%r"%(
+                        info["framework"], args.bridgesupport_file)
+            merge_xml.merge_xml(info["exceptions"], args.bridgesupport_file)
 
-        elif args.command == 'compile':
-            compile.compile_metadata(info['compiled'], 
-                    info['exceptions'], 
-                    glob.glob(info['raw'] + '/*'), 
+        elif args.command == "compile":
+            if args.verbose:
+                print "Compile framework=%r target=%r"%(
+                        info["framework"], info["compiled"])
+            compile.compile_metadata(info["compiled"], 
+                    info["exceptions"], 
+                    glob.glob(info["raw"] + "/*"), 
             )
 
         else:
