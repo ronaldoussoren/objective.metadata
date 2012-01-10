@@ -7,5 +7,6 @@ syntax: glob
 info-files
 exceptions
 metadata
+doc/_build
 
 objective/metadata/yacctab.py
