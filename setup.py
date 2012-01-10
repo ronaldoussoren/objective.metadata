@@ -29,7 +29,7 @@ setup(
     packages=['objective', 'objective.metadata'],
     entry_points={
         'console_scripts': [
-            "objective-metadata = objective.metadata.script:main",
+            "objective-metadata-tool                 = objective.metadata.main:main",
         ],
     },
 )

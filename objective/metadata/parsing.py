@@ -19,7 +19,7 @@ from objective.cparser import parse_file, c_ast
 
 LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
 DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
-INT_RE=re.compile('^\(?((?:-?0x[0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
+INT_RE=re.compile('^\(?(?:\(long long\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
 FLOAT_RE=re.compile('^(\d+\.\d+)$')
 STR_RE=re.compile('^"(.*)"$')
 UNICODE_RE=re.compile('^@"(.*)"$')
@@ -116,7 +116,7 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=()):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=()):
         self.framework = framework
         self.framework_path = '/%s.framework/'%(framework,)
         if start_header is not None:
@@ -126,6 +126,7 @@ class FrameworkParser (object):
             self.start_header = '%s/%s.h'%(framework, framework)
 
         self.preheaders = preheaders
+        self.extraheaders = extraheaders
         self.additional_headers = []
         self.arch = arch
         self.sdk = sdk
@@ -139,7 +140,7 @@ class FrameworkParser (object):
         self.aliases = {}
         self.functions = {}
         self.cftypes = {}
-        self.func_macros = []
+        self.func_macros = {}
         self.typedefs = {}
         self.formal_protocols = {}
         self.informal_protocols = {}
@@ -170,6 +171,8 @@ class FrameworkParser (object):
         fp.write('#import <%s>\n'%(self.start_header,))
         for hdr in self.additional_headers:
             fp.write('#import <%s/%s>'%(self.framework, hdr))
+        for hdr in self.extraheaders:
+            fp.write('#import <%s>\n'%(hdr,))
 
 
     def parse(self):
@@ -228,6 +231,135 @@ class FrameworkParser (object):
                 'informal_protocols': self.informal_protocols,
                 'classes': self.classes,
                 'called_definitions': self.called_definitions,
+            },
+        }
+
+    def exceptions(self):
+        functions = {}
+        for nm, definition in self.functions.items():
+            info = {}
+            for idx, a in enumerate(definition['args']):
+                if a['typestr'].startswith('^'):
+                    a = dict(a)
+                    del a['typestr']
+                    try:
+                        info['args'][idx] = a
+                    except KeyError:
+                        info['args'] = { idx: a }
+
+            if definition['retval']['typestr'].startswith('^'):
+                a = dict(definition['retval'])
+                del a['typestr']
+                info['retval'] = a
+
+            if definition.get('variadic', False):
+                info['variadic'] = True
+
+            if info:
+                functions[nm] = info
+
+        prots = {}
+        for section in ('formal_protocols', 'informal_protocols'):
+            prots[section] = {}
+            for prot, protdef in getattr(self, section).items():
+                for meth in protdef['methods']:
+                    info = {}
+                    for idx, a in enumerate(meth['args']):
+                        if a['typestr'].startswith('^'):
+                            a = dict(a)
+                            del a['typestr']
+                            del a['typestr_special']
+                            try:
+                                info['args'][idx] = a
+                            except KeyError:
+                                info['args'] = {idx: a}
+
+                    if meth['retval']['typestr'].startswith('^'):
+                        a = dict(meth['retval'])
+                        del a['typestr']
+                        del a['typestr_special']
+                        info['retval'] = a
+
+                    if meth.get('variadic', False):
+                        info['variadic'] = True
+
+
+                    if info:
+                        if prot not in prots[section]:
+                            prots[section][prot] = {}
+                        if 'methods' not in prots[section][prot]:
+                            prots[section][prot]['methods'] = []
+
+                        info['selector'] = meth['selector']
+                        info['class_method'] = meth['class_method']
+                        prots[section][prot]['methods'].append(info)
+                meth = None
+
+                for prop in protdef['properties']:
+                    if prop['typestr'].startswith('^'):
+                        if prot not in formal_protocols:
+                            prots[section][prot] = {}
+                        if 'properties' not in prots[section][prot]:
+                            prots[section][prot]['properties'] = []
+
+                        prop = dict(prop)
+                        del prop['typestr']
+                        del prop['typestr_special']
+                        prots[section][prot]['properties'].append(prop)
+                prop = None
+
+        classes = {}
+        for clsname, clsdef in self.classes.items():
+            for method in clsdef['methods']:
+                info = {}
+                for idx, a in enumerate(method['args']):
+                    if a['typestr'].startswith('^'):
+                        a = dict(a)
+                        del a['typestr']
+                        del a['typestr_special']
+                        try:
+                            info['args'][idx] = a
+                        except KeyError:
+                            info['args'] = { idx: a }
+
+                if method['retval']['typestr'].startswith('^'):
+                    a = dict(method['retval'])
+                    del a['typestr']
+                    del a['typestr_special']
+                    info['retval'] = a
+
+                if method.get('variadic', False):
+                    info['variadic'] = True
+
+                if info:
+                    if clsname not in classes:
+                        classes[clsname] = {}
+                    if 'methods' not in classes[clsname]:
+                        classes[clsname]['methods'] = []
+
+                    info['selector'] = method['selector']
+                    info['class_method'] = method['class_method']
+                    classes[clsname]['methods'].append(info)
+
+            for prop in clsdef['properties']:
+                if prop['typestr'].startswith('^'):
+                    if clsname not in classes:
+                        classes[clsname] = {}
+                    if 'properties' not in classes[clsname]:
+                        classes[clsname]['properties'] = []
+
+                    prop = dict(prop)
+                    del prop['typestr']
+                    del prop['typestr_special']
+                    classes[clsname]['properties'].append(prop)
+
+
+        return {
+            'definitions': {
+                'functions': functions,
+                'formal_protocols': prots['formal_protocols'],
+                'informal_protocols': prots['informal_protocols'],
+                'classes': classes,
             },
         }
 
@@ -395,6 +527,7 @@ class FrameworkParser (object):
                     # Ignore private definitions
                     continue
 
+
                 value = m.group(2)
                 if value.endswith('\\'):
                     # Complex macro, ignore
@@ -432,12 +565,33 @@ class FrameworkParser (object):
 
                 m = ALIAS_RE.match(value)
                 if m is not None:
+                    if key.startswith('AVAILABLE_MAC_OS_X'):
+                        # Ignore availability macros
+                        continue
+
+                    if key.endswith('_EXPORT') or key.endswith('_IMPORT'):
+                        continue
+
                     value = m.group(1)
                     if value not in ('extern', 'static', 'inline', 'float'):
                         self.aliases[key] = m.group(1)
                     continue
 
-                if '__attribute__' in value:
+                if value == '(INT_MAX-1)':
+                    if self.arch in ('i386', 'ppc'):
+                        self.enum_values[key] = (1 << 31)-1
+                        continue
+
+                    elif self.arch in ('x86_64', 'ppc64'):
+                        self.enum_values[key] = (1 << 63)-1
+                        continue
+
+
+                if key in ('NS_DURING', 'NS_HANDLER', 'NS_ENDHANDLER'):
+                    # Classic exception handling in Foundation
+                    continue
+
+                if '__attribute__' in value or '__inline__' in value:
                     # It's fairly common to define macros for attributes,
                     # like '#define AM_UNUSED __attribute__((unused))'
                     continue
@@ -490,7 +644,7 @@ class FrameworkParser (object):
                     pass
 
                 else:
-                    self.func_macros.append(funcdef)
+                    self.func_macros[proto.split('(')[0]] = funcdef
 
     
     def add_function(self, name, type, funcspec):
@@ -498,7 +652,7 @@ class FrameworkParser (object):
             return
 
         self.functions[name] = func = { 
-            'retval': None,
+            'retval': {'typestr': None },
             'args': [],
         }
 
@@ -509,7 +663,7 @@ class FrameworkParser (object):
         if 'inline' in funcspec or '__inline__' in funcspec:
             func['inline'] = True
 
-        func['retval'] = self.typecodes.typestr(type.type)[0]
+        func['retval']['typestr'] = self.typecodes.typestr(type.type)[0]
         if type.args is None:
             func['xxx-no-params'] = True
         for arg in (type.args.params if type.args is not None else []):
@@ -561,7 +715,7 @@ class FrameworkParser (object):
 
         if func.get('variadic', False):
             for a in func['args']:
-                if a['name'] == 'format' and a['typestr'] == '^{__CFString=}':
+                if a['name'] == 'format' and a['typestr'] in ('^{__CFString=}', '@'):
                     a['printf_format'] = True
 
     def extract_block(self, blockptr):
@@ -616,6 +770,7 @@ class FrameworkParser (object):
             tc = '@', False
         else:
             tc = self.typecodes.typestr(decl.retval.type)
+
         meth = {
             'selector': decl.selector,
             'class_method': decl.class_method,
@@ -820,7 +975,7 @@ def iscferrorptr(node):
 
 
 if __name__ == "__main__":
-    p = FrameworkParser('AVFoundation', start_header='AVFoundation/AVFoundation.h')
+    p = FrameworkParser('InputMethodKit', start_header='InputMethodKit/InputMethodKit.h')
     p.parse()
 
     import pprint

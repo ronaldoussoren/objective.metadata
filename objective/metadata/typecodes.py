@@ -275,6 +275,7 @@ class TypeCodes (object):
         self.add_predefined('double', objc._C_DBL)
         self.add_predefined('id', objc._C_ID)
         self.add_predefined('void', objc._C_VOID)
+        self.add_predefined('SEL', objc._C_SEL)
 
         # XXX: Not entirely correct:
         self.add_predefined('__builtin_va_list', objc._C_PTR + objc._C_VOID )
