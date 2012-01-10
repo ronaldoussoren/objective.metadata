@@ -1,3 +1,8 @@
+"""
+Storage layer for scan and exception data.
+
+The data is stored in text files with JSON encoding.
+"""
 import json
 
 def _encode_default(obj):
