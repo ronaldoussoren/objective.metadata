@@ -11,7 +11,7 @@ import ConfigParser
 
 from . import compile
 from . import merge_xml
-from . import script as scan
+from . import scan
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
 #parser.add_argument("--verbose", action="store_true", help="print progress information", default=False)
