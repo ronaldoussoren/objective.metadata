@@ -18,11 +18,22 @@ def _decode_object(pairs):
     """ 
     'object_pairs_hook' callback for json.decode. 
     If a fieldname is an integer literal convert it to 'int'.
+
+    Field names and values that are of type 'unicode' will
+    be converted to 'str', mostly because this makes it
+    easier to generate the compiled metadata files.
     """
     result = {}
     for k, v in pairs:
+        if isinstance(v, unicode):
+            v = v.encode('ascii')
+
         if k.isdigit():
             result[int(k)] = v
+
+        elif isinstance(k, unicode):
+            result[k.encode('ascii')] = v
+
         else:
             result[k] = v
     return result

@@ -5,11 +5,6 @@ the metadata source file used by PyObjC.
 
 The metadata source file is a python file with a number of definitions
 that are used by the lazy loading functionality.
-
-TODO:
-- actually merging conflicting definitions
-- functions
-- cftypes
 """
 from __future__ import absolute_import
 import sys, glob, textwrap, time, itertools, collections, operator
@@ -46,6 +41,7 @@ class bstr(str):
         return 'b' + super(bstr, self).__repr__()
 
 
+
 class _wrapped_call (object):
     def __init__(self, name, args, kwds):
         self.name = name
@@ -68,6 +64,34 @@ class func_call (object):
         return _wrapped_call(self._func_name, args, kwds)
 
 
+sel32or64 = func_call('sel32or64')
+littleOrBig = func_call('littleOrBig')
+
+
+def _isLittleEndian(archs):
+    return archs in (set(['i386']), set(['x86_64']), set(['i386', 'x86_64']))
+
+def _isBigEndian(archs):
+    return archs in (set(['ppc']), set(['ppc64']), set(['ppc', 'ppc64']))
+
+def _is32Bit(archs):
+    return archs in (set(['ppc']), set(['i386']), set(['ppc', 'i386']))
+
+def _is64Bit(archs):
+    return archs in (set(['ppc64']), set(['x86_64']), set(['ppc64', 'x86_64']))
+
+def classify_archs(archs1, archs2, value1, value2):
+    if _is32Bit(archs1) and _is64Bit(archs2):
+        return sel32or64(value1, value2)
+    elif _is32Bit(archs2) and _is64Bit(archs1):
+        return sel32or64(value2, value1)
+    elif _isLittleEndian(archs1) and _isBigEndian(archs2):
+        return littleOrBig(value1, value2)
+    elif _isLittleEndian(archs2) and _isBigEndian(archs1):
+        return littleOrBig(value2, value1)
+    else:
+        return None
+
 def merge_defs(defs, key):
 
     # Uniq is logically a dict mapping from a value
@@ -78,13 +102,20 @@ def merge_defs(defs, key):
     for d in defs:
         for k, v in uniq:
             if k == d[key]:
-                v.append(d['arch'])
+                v.add(d['arch'])
                 break
         else:
-            uniq.append((d[key], [d['arch']]))
+            uniq.append((d[key], set([d['arch']])))
 
     if len(uniq) == 1:
         return {key: uniq[0][0]}
+
+    elif len(uniq) == 2:
+        value = classify_archs(uniq[0][1], uniq[1][1], uniq[0][0], uniq[1][0])
+        if value is None:
+            raise ValueError('Merge needed')
+
+        return {key: value}
 
     else:
         raise ValueError('Merge needed')
@@ -127,6 +158,129 @@ def extract_informal_protocols(exceptions, headerinfo):
             result[name] = informal_protocol(name, map(calc_selector, merge_defs(found[name], 'methods')['methods']))
 
     return result
+
+def calc_func_proto(exc, info, arch):
+    types = []
+    metadata = {}
+    if 'retval' in exc and 'type_override' in exc['retval']:
+        t = exc['retval']['type_override']
+        if isinstance(t, (list, tuple)):
+            if arch in ('i386', 'ppc'):
+                types.append(t[0])
+            else:
+                types.append(t[1])
+        else:
+            types.append(t)
+    elif 'retval' in info and 'typestr' in info['retval']:
+        types.append(info['retval']['typestr'])
+    else:
+        types.append('v')
+
+    retval = {}
+    if 'retval' in info:
+        retval.update(info['retval'])
+    if exc and 'retval' in exc:
+        retval.update(exc['retval'])
+    if 'typestr' in retval:
+        del retval['typestr']
+    if 'type_override' in retval:
+        del retval['type_override']
+    if retval:
+        metadata['retval'] = retval
+
+    metadata['arguments'] = {}
+
+    for idx, a in enumerate(info['args']):
+        if 'args' in exc and 'type_override' in exc['args'].get(idx, {}):
+            t = exc['args'][idx]['type_override']
+            if isinstance(t, (list, tuple)):
+                if arch in ('i386', 'ppc'):
+                    types.append(t[0])
+                else:
+                    types.append(t[1])
+            else:
+                types.append(t)
+        else:
+            types.append(a['typestr'])
+
+        arg = dict(a)
+        if 'args' in exc and idx in exc['args']:
+            arg.update(exc['args'][idx])
+        if 'name' in arg:
+            del arg['name']
+        if 'typestr' in arg:
+            del arg['typestr']
+        if 'type_override' in arg:
+            del arg['type_override']
+
+        if arg:
+            metadata['arguments'][idx] = arg
+
+    if not metadata['arguments']:
+        del metadata['arguments']
+
+    return bstr(''.join(types)), metadata
+        
+def extract_functions(exceptions, headerinfo):
+    functions = {}
+    excinfo = exceptions['definitions'].get('functions', {})
+
+    for info in headerinfo:
+        for name, value in info['definitions'].get('functions',{}).items():
+            if name in excinfo:
+                if excinfo[name].get('ignore', False): continue
+
+
+            typestr, metadata = calc_func_proto(excinfo.get(name, {}), value, info['arch'])
+            value = { 'typestr': typestr, 'metadata': metadata, 'arch': info['arch'] }
+            
+            try:
+                functions[name].append(value)
+            except KeyError:
+                functions[name] = [value]
+
+    for name, value in excinfo.items():
+        if name in functions: continue
+        if value.get('retval') and value.get('args') is not None:
+            functions[name] = [value]
+
+    result = {}
+    for name, value in functions.items():
+        info = merge_defs(value, 'typestr')
+        if value[0]['metadata']:
+            result[name] = (info['typestr'], '', value[0]['metadata'])
+        else:
+            result[name] = (info['typestr'],)
+    return result
+
+def extract_cftypes(exceptions, headerinfo):
+    cftypes = {}
+    excinfo = exceptions['definitions'].get('cftypes', {})
+
+    for info in headerinfo:
+        for name, value in info['definitions'].get('cftypes',{}).items():
+            if name in excinfo:
+                if excinfo[name].get('ignore', False): continue
+
+            try:
+                lst = cftypes[name]
+            except KeyError:
+                lst = cftypes[name] = []
+                
+            lst.append({'typestr': value['typestr'], 'arch':info['arch']})
+
+    result = []
+    for name, values in sorted(cftypes.items()):
+        value = merge_defs(values, 'typestr')
+        exc = excinfo.get(name, {})
+
+        result.append(
+            (name, value, exc.get('gettypeid_func'), exc.get('tollfree'))
+        )
+
+
+    return result
+
 
 def extract_externs(exceptions, headerinfo):
     result = {}
@@ -394,6 +548,13 @@ def emit_informal_protocols(fp, protocol_info):
     if protocol_info:
         print >>fp, "protocols=%r"%(protocol_info,)
 
+def emit_functions(fp, functions):
+    if functions:
+        print >>fp, "functions=%r"%(functions,)
+
+def emit_cftypes(fp, cftypes):
+    if cftypes:
+        print >>fp, "cftypes=%r"%(cftypes,)
 
 def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     """
@@ -408,8 +569,13 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
 
         emit_externs(fp, extract_externs(exceptions, headerinfo))
         emit_enums(fp, extract_enums(exceptions, headerinfo))
-
+        #emit_strconst(fp, extract_strconst(exceptions, headerinfo))
+        emit_functions(fp, extract_functions(exceptions, headerinfo))
+        # functions
+        # cftype
+        emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
+        # null_const
 
         fp.write(FOOTER)

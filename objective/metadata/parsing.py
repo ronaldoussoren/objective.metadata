@@ -242,6 +242,7 @@ class FrameworkParser (object):
                 if a['typestr'].startswith('^'):
                     a = dict(a)
                     del a['typestr']
+                    del a['name']
                     try:
                         info['args'][idx] = a
                     except KeyError:
