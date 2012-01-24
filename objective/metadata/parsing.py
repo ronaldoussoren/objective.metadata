@@ -47,6 +47,13 @@ class FilteredVisitor (c_ast.NodeVisitor):
             self.generic_visit(node)
             return
 
+        #if node.coord is not None and 'ABAddressBook.h' in node.coord.file:
+        #    print node, node.coord.file
+        #    try:
+        #        node.show(showcoord=True, attrnames=True)
+        #    except AttributeError:
+        #        pass
+
         super(FilteredVisitor, self).visit(node)
 
 class DefinitionVisitor (FilteredVisitor):
@@ -91,8 +98,12 @@ class DefinitionVisitor (FilteredVisitor):
         if node.name is None:
             return
 
-        if isinstance(node.type, c_ast.TypeDecl) and 'extern' in node.storage:
-            self._parser.add_extern(node.name, node.type)
+        if 'extern' in node.storage:
+            if isinstance(node.type, c_ast.PtrDecl):
+                self._parser.add_extern(node.name, node.type)
+
+            elif isinstance(node.type, c_ast.TypeDecl):
+                self._parser.add_extern(node.name, node.type)
 
         if isinstance(node.type, c_ast.FuncDecl):
             self._parser.add_function(node.name, node.type, node.funcspec)

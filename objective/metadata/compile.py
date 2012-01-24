@@ -105,7 +105,11 @@ def merge_defs(defs, key):
                 v.add(d['arch'])
                 break
         else:
-            uniq.append((d[key], set([d['arch']])))
+            try:
+                uniq.append((d[key], set([d['arch']])))
+            except:
+                print defs
+                raise
 
     if len(uniq) == 1:
         return {key: uniq[0][0]}
@@ -191,6 +195,11 @@ def calc_func_proto(exc, info, arch):
     metadata['arguments'] = {}
 
     for idx, a in enumerate(info['args']):
+
+        # C has 'aFucntion(void)' as the function prototype for functions
+        # without arguments.
+        if a.get('name') is None and a.get('typestr') == 'v': continue
+
         if 'args' in exc and 'type_override' in exc['args'].get(idx, {}):
             t = exc['args'][idx]['type_override']
             if isinstance(t, (list, tuple)):
@@ -275,7 +284,7 @@ def extract_cftypes(exceptions, headerinfo):
         exc = excinfo.get(name, {})
 
         result.append(
-            (name, value, exc.get('gettypeid_func'), exc.get('tollfree'))
+            (name, bstr(value['typestr']), exc.get('gettypeid_func'), exc.get('tollfree'))
         )
 
 
@@ -539,7 +548,7 @@ def emit_method_info(fp, method_info):
         fp.write('try:\n')
 
         for record in sorted(method_info, key=operator.itemgetter('class', 'selector')):
-            fp.write("    r(%r, %r, %r)\n"%(record['class'], record['selector'], record['metadata']))
+            fp.write("    r(%r, %r, %r)\n"%(record['class'], bstr(record['selector']), record['metadata']))
 
         fp.write('finally:\n')
         fp.write('    objc._updatingMetadata(False)\n')

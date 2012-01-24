@@ -66,24 +66,30 @@ def update_functions(exceptions, xml):
             if child.tag == 'retval':
                 if 'retval' in funcdata:
                     parse_argnode(child, funcdata['retval'])
+                    if 'typestr' in funcdata['retval']:
+                        funcdata['retval']['type_override'] = funcdata['retval']['typestr']
+                        del funcdata['retval']['typestr']
+
             elif child.tag == 'arg':
+                if child.get('index') is not None:
+                    argidx = int(child.get('index'))
                 if 'args' in funcdata and argidx in funcdata['args']:
                     info = funcdata['args'][argidx]
                     parse_argnode(child, info)
-                    if 'type' in info:
-                        info['type_override'] = info['type']
-                        del info['type']
+                    if 'typestr' in info:
+                        info['type_override'] = info['typestr']
+                        del info['typestr']
 
                 else:
                     info = {}
                     parse_argnode(child, info)
-                    if 'type' in info:
-                        del info['type']
+                    if 'typestr' in info:
+                        del info['typestr']
 
                     if info:
-                        if 'type' in info:
-                            info['type_override'] = info['type']
-                            del info['type']
+                        if 'typestr' in info:
+                            info['type_override'] = info['typestr']
+                            del info['typestr']
                         if 'args' not in funcdata:
                             funcdata['args'] = {}
                             funcdata['args'][argidx] = info
@@ -182,9 +188,9 @@ def merge_method_info(method, methnode):
         # Rename the type node in exceptions, this makes it easier
         # to merge the exceptions into the full data without overwriting
         # the type information gathered from header files.
-        if 'type' in info:
-            info['type_override'] = info['type']
-            del info['type']
+        if 'typestr' in info:
+            info['type_override'] = info['typestr']
+            del info['typestr']
 
 
 def parse_argnode(child, info):
@@ -201,6 +207,9 @@ def parse_argnode(child, info):
     for key in ['sel_of_type', 'type']:
         v = child.get(key)
         v64 = child.get(key+'64')
+
+        if key == 'type':
+            key = 'typestr'
         if v is not None:
             if v64 is not None and v64 != v:
                 info[key] = (v, v64)
@@ -215,6 +224,7 @@ def parse_argnode(child, info):
         parse_callable(True, child, info)
     if bool_attr(child, 'block'):
         parse_callable(False, child, info)
+
 
     v = child.get('c_array_length_in_arg')
     if v is not None:
@@ -239,7 +249,7 @@ def parse_callable(isfunction, node, dct):
     if not isfunction:
         # Blocks have an implicit first argument
         arguments[idx] = {
-            'type': '^v',
+            'typestr': '^v',
         }
         idx += 1
 
@@ -257,5 +267,5 @@ def parse_callable(isfunction, node, dct):
 
     if meta.get('retval') is None:
         meta['retval'] = {
-            'type': 'v',
+            'typestr': 'v',
         }
