@@ -142,7 +142,7 @@ class TypeCodes (object):
             result = [ objc._C_STRUCT_B ]
             if node.name is None:
                 if name is not None:
-                    result.append(name)
+                    result.append('_' + name)
                     special=True
             else:
                 result.append(node.name)

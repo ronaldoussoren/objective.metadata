@@ -579,6 +579,36 @@ def extract_method_info(exceptions, headerinfo):
 
     return [info for info in result.values() if info is not None]
 
+def extract_structs(exceptions, headerinfo):
+    excinfo = exceptions['definitions'].get('structs', {})
+    createStructType = func_call('objc.createStructType')
+
+    structs = {}
+    for info in headerinfo:
+        for name, value in info['definitions'].get('structs', {}).items():
+            if name in excinfo and excinfo[name].get(ignore, False):
+                continue
+
+            if name not in structs:
+                structs[name] = []
+
+            structs[name].append({
+                'typestr': value['typestr'],
+                'fieldnames': value['fieldnames'],
+                'arch': info['arch'],
+            })
+
+    result = {}
+    for name, values in structs.items():
+        fieldnames = values[0]['fieldnames']
+        typestr = merge_defs(values, 'typestr')['typestr']
+        result[name] = createStructType(name, typestr, fieldnames)
+
+    return result
+
+def emit_structs(fp, structs):
+    if structs:
+        print >>fp, "misc.update(%r)"%(structs,)
 
 
 def emit_externs(fp, externs):
@@ -670,6 +700,7 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     with open(output_fn, 'w') as fp:
         fp.write(HEADER % dict(timestamp=time.ctime()))
 
+        emit_structs(fp, extract_structs(exceptions, headerinfo))
         emit_externs(fp, extract_externs(exceptions, headerinfo))
         emit_enums(fp, extract_enums(exceptions, headerinfo))
         emit_literal(fp, extract_literal(exceptions, headerinfo))
@@ -677,6 +708,7 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
+        # structs
         # null_const
 
         fp.write(FOOTER)
