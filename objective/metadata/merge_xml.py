@@ -25,6 +25,22 @@ BOOLEAN_ATTRIBUTES=[
     ("null_accepted", True),
 ]
 
+def typestr2typestr(value):
+    # ".bridgesupport" files use "B" for objc._C_NSBOOL and "Z" for
+    # objc._C_BOOL, which is different from what's used internally in
+    # the bridge. 
+    # Translate a bridgesupport typestring into one used by the bridge
+    if value == "B":
+        return "Z"
+    elif value == "Z":
+        return "B"
+    elif value == "^B":
+        return "^Z"
+    elif value == "^Z":
+        return "^B"
+
+    # TODO: Handle compound types, not needed for now
+    return value
 
 def merge_xml(exceptions_fn, xml_fn):
     xml = ElementTree.parse(xml_fn)
@@ -132,15 +148,42 @@ def update_cftypes(exceptions, xml):
                 info[attr] = v
 
 def update_classes(exceptions, xml):
-    for clsname, clsdata in exceptions['definitions'].get('classes', {}).items():
-        clsnode = xml.find(".//class[@name='%s']"%(clsname,))
-        if clsnode is None:
-            continue
+    if 0:
+        for clsname, clsdata in exceptions['definitions'].get('classes', {}).items():
+            clsnode = xml.find(".//class[@name='%s']"%(clsname,))
+            if clsnode is None:
+                continue
 
-        for method in clsdata.get('methods', ()):
-            methnode = locate_method(clsnode, method['selector'], method['class_method'])
-            if methnode is not None:
-                merge_method_info(method, methnode)
+            for method in clsdata.get('methods', ()):
+                methnode = locate_method(clsnode, method['selector'], method['class_method'])
+                if methnode is not None:
+                    merge_method_info(method, methnode)
+
+    defs = exceptions['definitions'].get('classes', {})
+    for clsnode in xml.findall(".//class"):
+        clsname = clsnode.get('name')
+        if clsname not in defs:
+            clsdata = defs[clsname] = {'methods':[]}
+        else:
+            clsdata = defs[clsname]
+
+        for methnode in clsnode:
+            for node in clsdata.get('methods', ()):
+                if node['selector'] == methnode.get('selector') and \
+                        node['class_method'] == bool_attr(node, 'class_method'):
+                    merge_method_info(node, methnode)
+                    break
+            else:
+                node = {
+                    'selector': methnode.get('selector'),
+                    'class_method': bool_attr(methnode, 'class_method'),
+                }
+                merge_method_info(node, methnode)
+                clsdata['methods'].append(node)
+            
+
+
+
 
 
 def locate_method(root, selector, class_method):
@@ -212,9 +255,9 @@ def parse_argnode(child, info):
             key = 'typestr'
         if v is not None:
             if v64 is not None and v64 != v:
-                info[key] = (v, v64)
+                info[key] = (typestr2typestr(v), typestr2typestr(v64))
             else:
-                info[key] = v
+                info[key] = typestr2typestr(v)
         elif v64 is not None:
             # Shouldn't actually happen, better not
             # loose information though

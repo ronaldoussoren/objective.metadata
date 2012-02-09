@@ -391,7 +391,7 @@ def merge_method_info(infolist, exception):
     that couldn't be loaded at runtime by the bridge.
     """
     result = {
-        'args': {}
+        'arguments': {}
     }
     for info in infolist:
         for k in info:
@@ -406,10 +406,10 @@ def merge_method_info(infolist, exception):
 
             elif k == 'args':
                 for idx, value in enumerate(info[k]):
-                    if idx not in result['args']:
-                        result['args'][idx] = {}
+                    if idx+2 not in result['arguments']:
+                        result['arguments'][idx+2] = {}
 
-                    merge_arginfo(result['args'][idx], value, info['arch'])
+                    merge_arginfo(result['arguments'][idx+2], value, info['arch'])
 
             elif k == 'visibility':
                 pass
@@ -440,16 +440,16 @@ def merge_method_info(infolist, exception):
                     del result['retval']['type_override']
 
             elif k == 'args':
-                args = result['args']
+                args = result['arguments']
                 for idx, value in exception['args'].items():
-                    if idx in args:
-                        args[idx].update(value)
+                    if idx+2 in args:
+                        args[idx+2].update(value)
                     else:
-                        args[idx] = dict(value)
+                        args[idx+2] = dict(value)
 
-                    if 'type_override' in args[idx]:
-                        args[idx]['type'] = args[idx]['type_override']
-                        del args[idx]['type_override']
+                    if 'type_override' in args[idx+2]:
+                        args[idx+2]['type'] = args[idx+2]['type_override']
+                        del args[idx+2]['type_override']
 
             else:
                 info[k] = exception[k]
@@ -466,8 +466,8 @@ def merge_method_info(infolist, exception):
         if not result['retval']:
             del result['retval']
 
-    if 'args' in result:
-        for i, a in result['args'].items():
+    if 'arguments' in result:
+        for i, a in result['arguments'].items():
             if 'type' in a:
                 a['type'] = calc_type(a['type'])
 
@@ -476,12 +476,13 @@ def merge_method_info(infolist, exception):
                     a[k] = bstr(a[k])
 
             if not a:
-                del result['args'][i]
-        if not result['args']:
-            del result['args']
+                del result['arguments'][i]
+        if not result['arguments']:
+            del result['arguments']
 
     if not result:
         return None
+    
     return {
         'class': infolist[0]['class'],
         'selector': infolist[0]['selector'],
@@ -504,6 +505,60 @@ def extract_method_info(exceptions, headerinfo):
 
                 result[key][-1]['arch'] = info['arch']
                 result[key][-1]['class'] = name
+
+            for prop in value.get('properties', ()):
+                # Properties have a getter and optionally a setter method,
+                # ensure that those are visible to the metadata system.
+                getter = prop['name']
+                setter = 'set' + getter[0].upper() + getter[1:] + ":"
+                for item in prop['attributes']:
+                    if item == 'readonly':
+                        setter = None
+                    elif item[0] == 'getter':
+                        getter = item[1]
+                    elif item[0] == 'setter':
+                        setter = item[1]
+                
+                if getter:
+                    key = (name, getter, False)
+                    meth = {
+                        "selector": getter,
+                        "retval": {
+                            "typestr": prop["typestr"],
+                            "typestr_special": prop["typestr_special"],
+                        },
+                        "args": [],
+                        "class_method": False,
+                    }
+                    if key in result:
+                        result[key].append(dict(meth))
+                    else:
+                        result[key] = [dict(meth)]
+                    result[key][-1]['arch'] = info['arch']
+                    result[key][-1]['class'] = name
+
+                if setter:
+                    key = (name, setter, False)
+                    meth = {
+                        "selector": setter,
+                        "retval": {
+                            "typestr": "v",
+                            "typestr_special": False
+                        },
+                        "args": [
+                            {
+                                "typestr": prop["typestr"],
+                                "typestr_special": prop["typestr_special"],
+                            },
+                        ],
+                        "class_method": False,
+                    }
+                    if key in result:
+                        result[key].append(dict(meth))
+                    else:
+                        result[key] = [dict(meth)]
+                    result[key][-1]['arch'] = info['arch']
+                    result[key][-1]['class'] = name
 
     for key in list(result):
         result[key] = merge_method_info(result[key], 

@@ -918,6 +918,7 @@ class FrameworkParser (object):
                         'name': item.name,
                         'typestr': tc[0],
                         'typestr_special': tc[1],
+                        'attributes': decl.attributes,
                     })
 
             else:
@@ -960,6 +961,7 @@ class FrameworkParser (object):
                         'name': item.name,
                         'typestr': tc[0],
                         'typestr_special': tc[1],
+                        'attributes': decl.attributes,
                     })
 
             else:

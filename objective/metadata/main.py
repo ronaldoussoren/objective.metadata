@@ -59,7 +59,6 @@ def parse_ini(ini_file, ini_sections):
         else:
             info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["framework"], "_metadata.py")
 
-            info["compiled"] = os.path.join("metadata", info["framework"] + ".py")
 
         if cfg.has_option(section, "start-header"):
             info["start-header"] = cfg.get(section, "start-header")
