@@ -287,6 +287,13 @@ def extract_cftypes(exceptions, headerinfo):
             (name, bstr(value['typestr']), exc.get('gettypeid_func'), exc.get('tollfree'))
         )
 
+    for name, value in excinfo.items():
+        if name in cftypes: continue
+        if 'typestr' not in value: continue
+
+        result.append(
+            (name, bstr(value['typestr']), exc.get('gettypeid_func'), exc.get('tollfree'))
+        )
 
     return result
 
@@ -635,8 +642,6 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_enums(fp, extract_enums(exceptions, headerinfo))
         #emit_strconst(fp, extract_strconst(exceptions, headerinfo))
         emit_functions(fp, extract_functions(exceptions, headerinfo))
-        # functions
-        # cftype
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
