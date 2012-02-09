@@ -644,7 +644,7 @@ def extract_literal(exceptions, headerinfo):
     result = {}
     for k, v in found.items():
         v = merge_defs(v, 'value')
-        result[k] = v
+        result[k] = v['value']
 
     return result
 
