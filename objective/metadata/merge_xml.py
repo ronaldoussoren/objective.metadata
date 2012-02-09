@@ -169,8 +169,8 @@ def update_classes(exceptions, xml):
 
         for methnode in clsnode:
             for node in clsdata.get('methods', ()):
-                if node['selector'] == methnode.get('selector') and \
-                        node['class_method'] == bool_attr(node, 'class_method'):
+                if (node['selector'] == methnode.get('selector')) and \
+                        (node['class_method'] == bool_attr(methnode, 'class_method')):
                     merge_method_info(node, methnode)
                     break
             else:
