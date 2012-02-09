@@ -627,6 +627,32 @@ def emit_cftypes(fp, cftypes):
     if cftypes:
         print >>fp, "cftypes=%r"%(cftypes,)
 
+def extract_literal(exceptions, headerinfo):
+    excinfo = exceptions['definitions'].get('literals', {})
+
+    found = {}
+    for info in headerinfo:
+        for name, value in info['definitions'].get('literals', {}).items():
+            if name in excinfo and excinfo[name].get('ignore', False):
+                continue
+
+            if name not in found:
+                found[name] = []
+
+            found[name].append({'value': value, 'arch':info['arch']})
+
+    result = {}
+    for k, v in found.items():
+        v = merge_defs(v, 'value')
+        result[k] = v
+
+    return result
+
+
+
+def emit_literal(fp, literals):
+    print >>fp, "misc.update(%r)"%(literals)
+
 def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     """
     Combine the data from header files scans and manual exceptions
@@ -640,7 +666,7 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
 
         emit_externs(fp, extract_externs(exceptions, headerinfo))
         emit_enums(fp, extract_enums(exceptions, headerinfo))
-        #emit_strconst(fp, extract_strconst(exceptions, headerinfo))
+        emit_literal(fp, extract_literal(exceptions, headerinfo))
         emit_functions(fp, extract_functions(exceptions, headerinfo))
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
