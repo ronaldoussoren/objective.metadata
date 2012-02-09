@@ -384,11 +384,14 @@ def merge_arginfo(current, update, arch):
             current[k] = update[k]
 
 def calc_type(choices):
+    if isinstance(choices, str):
+        # FIXME: investigate why this is needed (Collabortation wrappers)
+        return choices
     if len(choices) == 1:
         return bstr(iter(choices).next())
 
     else:
-        raise ValueError("merge typestrings")
+        raise ValueError("merge typestrings: %r"%(choices,))
         
 
 def merge_method_info(infolist, exception):
@@ -480,7 +483,10 @@ def merge_method_info(infolist, exception):
 
             for k in  ('type_modifier', 'sel_of_type'):
                 if k in a:
-                    a[k] = bstr(a[k])
+                    if isinstance(a[k], (list, tuple)):
+                        a[k] = sel32or64(bstr(a[k][0]), bstr(a[k][1]))
+                    else:
+                        a[k] = bstr(a[k])
 
             if not a:
                 del result['arguments'][i]
