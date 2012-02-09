@@ -30,14 +30,13 @@ def typestr2typestr(value):
     # objc._C_BOOL, which is different from what's used internally in
     # the bridge. 
     # Translate a bridgesupport typestring into one used by the bridge
+    if value and value[0] in "onN^":
+        return value[0] + typestr2typestr(value[1:])
+
     if value == "B":
         return "Z"
     elif value == "Z":
         return "B"
-    elif value == "^B":
-        return "^Z"
-    elif value == "^Z":
-        return "^B"
 
     # TODO: Handle compound types, not needed for now
     return value

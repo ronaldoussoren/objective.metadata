@@ -292,7 +292,7 @@ def extract_cftypes(exceptions, headerinfo):
         if 'typestr' not in value: continue
 
         result.append(
-            (name, bstr(value['typestr']), exc.get('gettypeid_func'), exc.get('tollfree'))
+            (name, bstr(value['typestr']), value.get('gettypeid_func'), value.get('tollfree'))
         )
 
     return result

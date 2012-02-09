@@ -75,7 +75,6 @@ def parse_ini(ini_file, ini_sections):
         else:
             info["post-headers"] = []
 
-
         yield info
 
 def main():
