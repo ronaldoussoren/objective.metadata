@@ -20,7 +20,7 @@ from objective.cparser import parse_file, c_ast
 LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
 DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
 INT_RE=re.compile('^\(?(?:\(long long\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
-FLOAT_RE=re.compile('^(\d+\.\d+)$')
+FLOAT_RE=re.compile('^([-]?\d+\.\d+)$')
 STR_RE=re.compile('^"(.*)"$')
 UNICODE_RE=re.compile('^@"(.*)"$')
 UNICODE2_RE=re.compile('^CFSTR\("(.*)"\)$')
@@ -118,6 +118,7 @@ class DefinitionVisitor (FilteredVisitor):
         self._parser.add_category(node)
 
     def visit_Interface(self, node):
+        self.generic_visit(node)
         self._parser.add_interface(node)
 
 class FrameworkParser (object):
@@ -575,6 +576,10 @@ class FrameworkParser (object):
                     self.literals[key] = unicode(m.group(1))
                     continue
 
+                if value in ('nil', 'NULL', 'Nil'):
+                    self.literals[key] = None
+                    continue
+
                 m = ALIAS_RE.match(value)
                 if m is not None:
                     if key.startswith('AVAILABLE_MAC_OS_X'):
@@ -631,6 +636,7 @@ class FrameworkParser (object):
                     # For #define's like this:  #define kDSpEveryContext ((DSpContextReference)NULL)
                     self.literals[key] = None
                     continue
+
 
                 m = SC_SCHEMA_RE.match(value)
                 if m is not None:
