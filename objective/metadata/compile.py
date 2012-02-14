@@ -93,7 +93,6 @@ def classify_archs(archs1, archs2, value1, value2):
         return None
 
 def merge_defs(defs, key):
-
     # Uniq is logically a dict mapping from a value
     # to the set of architectures that use this value.
     # This cannot be a real dictionary because we sometimes
@@ -251,6 +250,8 @@ def extract_functions(exceptions, headerinfo):
     for name, value in excinfo.items():
         if name in functions: continue
         if value.get('retval') and value.get('args') is not None:
+            typestr, metadata = calc_func_proto(excinfo.get(name, {}), value, info['arch'])
+            value = { 'typestr': typestr, 'metadata': metadata, 'arch': info['arch'] }
             functions[name] = [value]
 
     result = {}
