@@ -354,7 +354,7 @@ def extract_expressions(exceptions, headerinfo):
             result[name] = [{'typestr':excinfo['name']['value'], 'arch': None }]
 
     for name in result:
-        result[name] = merge_defs(result[name], 'value')
+        result[name] = merge_defs(result[name], 'value')['value']
 
     return result
 
