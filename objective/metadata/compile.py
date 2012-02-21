@@ -158,6 +158,8 @@ def extract_informal_protocols(exceptions, headerinfo):
             result[name] = informal_protocol(name, map(calc_selector, info[name][0]))
 
         else:
+            # FIXME: This is too simple, need to actually merge the list of definitions
+
             result[name] = informal_protocol(name, map(calc_selector, merge_defs(found[name], 'methods')['methods']))
 
     return result
@@ -709,7 +711,4 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
-        # structs
-        # null_const
-
         fp.write(FOOTER)

@@ -15,6 +15,7 @@ class _Visitor (c_ast.NodeVisitor):
     def __init__(self, registry):
         super(_Visitor, self).__init__()
         self._registry = registry
+        self._seen_structs = {}
 
     def visit_Interface(self, node):
         self.generic_visit(node)
@@ -24,7 +25,20 @@ class _Visitor (c_ast.NodeVisitor):
     def visit_ForwardClass(self, node):
         self._registry._classes.add(node.name)
 
+    def visit_Struct(self, node):
+        if node.name is not None and node.decls is not None:
+            if node.name not in self._seen_structs:
+                self._seen_structs[node.name] = node
+
     def visit_Typedef(self, node):
+        type = node.type
+        while isinstance(type, c_ast.TypeDecl):
+            type = type.type
+        if isinstance(type, c_ast.Struct) and type.decls is None:
+            if type.name in self._seen_structs:
+                self._registry.add_typedef(node.name, self._seen_structs[type.name])
+                return
+                
         self._registry.add_typedef(node.name, node.type)
 
     def visit_EnumeratorList(self, node):
@@ -146,6 +160,7 @@ class TypeCodes (object):
                     special=True
             else:
                 result.append(node.name)
+
 
             result.append('=')
 
