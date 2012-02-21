@@ -124,6 +124,35 @@ def merge_defs(defs, key):
         raise ValueError('Merge needed')
 
 
+def merge_definition_lists(defs):
+    all_methods = {}
+    for info in defs:
+        arch = info['arch']
+        methods = info['methods']
+        for meth in methods:
+            try:
+                lst = all_methods[meth['selector']]
+            except KeyError:
+                lst = all_methods[meth['selector']] = []
+
+            typestr = ''
+            if 'retval' in meth:
+                typestr = meth['retval']['typestr']
+            else:
+                typestr = 'v'
+            typestr += '@:'
+            for a in meth['args']:
+                typestr += a['typestr']
+            lst.append({'arch': arch, 'typestr': bstr(typestr)})
+
+    result = []
+    for selector, typestr in all_methods.items():
+        typestr = merge_defs(typestr, 'typestr')['typestr']
+        result.append(func_call('objc.selector')(None, selector, typestr, isRequired=False))
+
+    return result
+
+
 def extract_informal_protocols(exceptions, headerinfo):
     found = {}
 
@@ -159,8 +188,9 @@ def extract_informal_protocols(exceptions, headerinfo):
 
         else:
             # FIXME: This is too simple, need to actually merge the list of definitions
+            merge_definition_lists(found[name])
 
-            result[name] = informal_protocol(name, map(calc_selector, merge_defs(found[name], 'methods')['methods']))
+            result[name] = informal_protocol(name, merge_definition_lists(found[name]))
 
     return result
 
