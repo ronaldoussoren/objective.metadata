@@ -31,6 +31,7 @@ FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]
 ERR_SUB_DEFINE_RE=re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
+OR_EXPR_RE=re.compile(r"\([A-Za-z0-9]*(\|[A-Za-z0-9]*)*\)")
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
@@ -150,6 +151,7 @@ class FrameworkParser (object):
         self.externs = {}
         self.literals = {}
         self.aliases = {}
+        self.expressions = {}
         self.functions = {}
         self.cftypes = {}
         self.func_macros = {}
@@ -236,6 +238,7 @@ class FrameworkParser (object):
                 'externs':   self.externs,
                 'literals':  self.literals,
                 'aliases':   self.aliases,
+                'expressions':   self.expressions,
                 'functions': self.functions,
                 'cftypes':   self.cftypes,
                 'func_macros': self.func_macros,
@@ -641,6 +644,11 @@ class FrameworkParser (object):
                 m = SC_SCHEMA_RE.match(value)
                 if m is not None:
                     self.externs[key] = objc._C_ID
+                    continue
+
+                m = OR_EXPR_RE.match(value)
+                if m is not None:
+                    self.expressions[key] = value
                     continue
 
                 print "Warning: ignore #define %s %s"%(key, value)

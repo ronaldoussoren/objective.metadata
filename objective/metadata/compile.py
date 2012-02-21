@@ -330,6 +330,33 @@ def extract_cftypes(exceptions, headerinfo):
 
     return result
 
+def extract_expressions(exceptions, headerinfo):
+    result = {}
+
+    excinfo = exceptions['definitions'].get('expressions', {})
+
+    # Add all definitions from parsed header files
+    for info in headerinfo:
+        for name, value in info['definitions'].get('expressions', {}).items():
+            if name in excinfo:
+                if excinfo[name].get('ignore', False): continue
+
+            if name in result:
+                result[name].append({'value': value, 'arch': info['arch']})
+
+            else:
+                result[name] = [{'value': value, 'arch': info['arch']}]
+
+
+    # Finally add definitions that were manually added to  the exceptions file
+    for name in excinfo:
+        if name not in result and 'value' in excinfo['name']:
+            result[name] = [{'typestr':excinfo['name']['value'], 'arch': None }]
+
+    for name in result:
+        result[name] = merge_defs(result[name], 'value')
+
+    return result
 
 def extract_externs(exceptions, headerinfo):
     result = {}
@@ -722,6 +749,9 @@ def extract_literal(exceptions, headerinfo):
 def emit_literal(fp, literals):
     print >>fp, "misc.update(%r)"%(literals)
 
+def emit_expressions(fp, expressions):
+    print >>fp, "expressions = %r"%(expressions)
+
 def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     """
     Combine the data from header files scans and manual exceptions
@@ -741,4 +771,5 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
+        emit_expressions(fp, extract_expressions(exceptions, headerinfo))
         fp.write(FOOTER)
