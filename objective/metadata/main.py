@@ -75,6 +75,11 @@ def parse_ini(ini_file, ini_sections):
         else:
             info["post-headers"] = []
 
+        if cfg.has_option(section, "link-framework"):
+            info["link-framework"] = cfg.get(section, "link-framework")
+        else:
+            info["link-framework"] = info["framework"]
+
         yield info
 
 def main():
@@ -97,7 +102,8 @@ def main():
                     info["pre-headers"], 
                     info["post-headers"], 
                     args.sdk_root, 
-                    args.arch)
+                    args.arch,
+                    info["link-framework"])
 
         elif args.command == "import":
             if args.verbose:

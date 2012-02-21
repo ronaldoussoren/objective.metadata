@@ -129,8 +129,9 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=()):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None):
         self.framework = framework
+        self.link_framework = link_framework if link_framework is not None else framework
         self.framework_path = '/%s.framework/'%(framework,)
         if start_header is not None:
             self.start_header = start_header
@@ -418,7 +419,7 @@ class FrameworkParser (object):
             '-arch', self.arch,
             '-isysroot', self.sdk,
             fname,
-            '-framework', self.framework])
+            '-framework', self.link_framework])
         xit = p.wait()
         os.unlink(fname)
         if xit != 0:
