@@ -445,9 +445,9 @@ def exception_method(exceptions, key):
     return None
 
 
-def merge_arginfo(current, update, arch):
+def merge_arginfo(current, update, arch, only_special):
     if 'typestr_special' in update:
-        if update['typestr_special']:
+        if update['typestr_special'] or not only_special:
             if 'type' not in current:
                 current['type'] = collections.defaultdict(list)
 
@@ -465,10 +465,17 @@ def calc_type(choices):
         return bstr(iter(choices).next())
 
     else:
+        ch = []
+        for k, v in choices.iteritems():
+            for e in v:
+                ch.append({'value': bstr(k), 'arch': e})
+
+        return merge_defs(ch, 'value')['value']
+
         raise ValueError("merge typestrings: %r"%(choices,))
         
 
-def merge_method_info(infolist, exception):
+def merge_method_info(infolist, exception, only_special):
     """
     Merge method metadata and exceptions and return the resulting 
     information dictionary. Returns ``None`` when there is no information
@@ -486,14 +493,14 @@ def merge_method_info(infolist, exception):
                 if 'retval' not in result:
                     result['retval'] = {}
 
-                merge_arginfo(result['retval'], info[k], info['arch'])
+                merge_arginfo(result['retval'], info[k], info['arch'], only_special)
 
             elif k == 'args':
                 for idx, value in enumerate(info[k]):
                     if idx+2 not in result['arguments']:
                         result['arguments'][idx+2] = {}
 
-                    merge_arginfo(result['arguments'][idx+2], value, info['arch'])
+                    merge_arginfo(result['arguments'][idx+2], value, info['arch'], only_special)
 
             elif k == 'visibility':
                 pass
@@ -577,12 +584,14 @@ def merge_method_info(infolist, exception):
         'metadata': result,
     }
 
-def extract_method_info(exceptions, headerinfo):
+def extract_method_info(exceptions, headerinfo, section='classes'):
     result = {}
-    excinfo = exceptions['definitions'].get('classes', {})
+    excinfo = exceptions['definitions'].get(section, {})
 
     for info in headerinfo:
-        for name, value in info['definitions'].get('classes', {}).items():
+        for name, value in info['definitions'].get(section, {}).items():
+            if section != 'classes':
+                name = 'NSObject'
             for meth in value.get('methods', ()):
                 key = (name, meth['selector'], meth['class_method'])
                 if key in result:
@@ -649,7 +658,7 @@ def extract_method_info(exceptions, headerinfo):
 
     for key in list(result):
         result[key] = merge_method_info(result[key], 
-                exception_method(excinfo, key))
+                exception_method(excinfo, key), section == 'classes')
 
     return [info for info in result.values() if info is not None]
 
@@ -787,6 +796,8 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_functions(fp, extract_functions(exceptions, headerinfo))
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
+        emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'formal_protocols'))
+        emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'informal_protocols'))
         emit_informal_protocols(fp, extract_informal_protocols(exceptions, headerinfo))
         emit_expressions(fp, extract_expressions(exceptions, headerinfo))
         fp.write(FOOTER)
