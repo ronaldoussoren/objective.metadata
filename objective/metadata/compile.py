@@ -465,12 +465,16 @@ def calc_type(choices):
         return bstr(iter(choices).next())
 
     else:
-        ch = []
-        for k, v in choices.iteritems():
-            for e in v:
-                ch.append({'value': bstr(k), 'arch': e})
+        if isinstance(choices, list):
+            return sel32or64(*choices)
 
-        return merge_defs(ch, 'value')['value']
+        else:
+            ch = []
+            for k, v in choices.iteritems():
+                for e in v:
+                    ch.append({'value': bstr(k), 'arch': e})
+
+            return merge_defs(ch, 'value')['value']
 
         raise ValueError("merge typestrings: %r"%(choices,))
         
@@ -590,8 +594,6 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
 
     for info in headerinfo:
         for name, value in info['definitions'].get(section, {}).items():
-            if section != 'classes':
-                name = 'NSObject'
             for meth in value.get('methods', ()):
                 key = (name, meth['selector'], meth['class_method'])
                 if key in result:
@@ -660,7 +662,12 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
         result[key] = merge_method_info(result[key], 
                 exception_method(excinfo, key), section == 'classes')
 
-    return [info for info in result.values() if info is not None]
+    result = [info for info in result.values() if info is not None]
+    if section != 'classes':
+        for item in result:
+            item['class'] = 'NSObject'
+
+    return result
 
 def extract_structs(exceptions, headerinfo):
     excinfo = exceptions['definitions'].get('structs', {})
