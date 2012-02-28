@@ -54,10 +54,6 @@ def parse_ini(ini_file, ini_sections):
         else:
             info["exceptions"] = os.path.join(ini_dir, info["framework"] + ".fwinfo")
 
-        if cfg.has_option(section, "compiled"):
-            info["compiled"] = os.path.join(ini_dir, cfg.get(section, "exceptions"))
-        else:
-            info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["framework"], "_metadata.py")
 
 
         if cfg.has_option(section, "start-header"):
@@ -79,6 +75,21 @@ def parse_ini(ini_file, ini_sections):
             info["link-framework"] = cfg.get(section, "link-framework")
         else:
             info["link-framework"] = info["framework"]
+
+        if cfg.has_option(section, "python-package"):
+            info["python-package"] = cfg.get(section, "python-package")
+        else:
+            info["python-package"] = info["framework"]
+
+        if cfg.has_option(section, "compiled"):
+            info["compiled"] = os.path.join(ini_dir, cfg.get(section, "compiled"))
+        else:
+            info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["python-package"], "_metadata.py")
+
+        if cfg.has_option(section, "only-headers"):
+            info["only-headers"] = [x.strip() for x in cfg.get(section, "only-headers").split(",")]
+        else:
+            info["only-headers"] = None
 
         yield info
 
@@ -103,7 +114,9 @@ def main():
                     info["post-headers"], 
                     args.sdk_root, 
                     args.arch,
-                    info["link-framework"])
+                    info["link-framework"],
+                    info["only-headers"]
+                    )
 
         elif args.command == "import":
             if args.verbose:

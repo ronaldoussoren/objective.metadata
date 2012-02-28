@@ -129,7 +129,7 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None, only_headers=None):
         self.framework = framework
         self.link_framework = link_framework if link_framework is not None else framework
         self.framework_path = '/%s.framework/'%(framework,)
@@ -138,6 +138,8 @@ class FrameworkParser (object):
 
         else:
             self.start_header = '%s/%s.h'%(framework, framework)
+
+        self.only_headers = only_headers
 
         self.preheaders = preheaders
         self.extraheaders = extraheaders
@@ -397,6 +399,10 @@ class FrameworkParser (object):
         if self.framework_path in node.coord.file:
             i = node.coord.file.index(self.framework_path)
             p = node.coord.file[i+len(self.framework_path) +len('Headers/'):]
+
+            if self.only_headers:
+                if os.path.basename(p) not in self.only_headers:
+                    return False
              
             self.headers.add(p)
             return True
@@ -536,6 +542,10 @@ class FrameworkParser (object):
             if curfile is None or self.framework_path not in curfile:
                 # Ignore definitions in wrong file
                 continue
+
+            if self.only_headers:
+                if os.path.basename(curfile) not in self.only_headers:
+                    continue
 
             m = DEFINE_RE.match(ln)
             if m is not None:

@@ -186,6 +186,8 @@ def update_classes(exceptions, xml):
 
 
 def locate_method(root, selector, class_method):
+    if root is None:
+        return None
     meth_nodes = root.findall(".//method[@selector='%s']"%(selector,))
     for methnode in meth_nodes:
         if class_method:

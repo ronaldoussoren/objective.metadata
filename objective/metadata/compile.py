@@ -299,6 +299,34 @@ def extract_functions(exceptions, headerinfo):
             result[name] = (info['typestr'],)
     return result
 
+
+def extract_opaque_cftypes(exceptions, headerinfo):
+    cftypes = {}
+    excinfo = exceptions['definitions'].get('cftypes', {})
+
+    for info in headerinfo:
+        for name, value in info['definitions'].get('cftypes',{}).items():
+            if name in excinfo:
+                if excinfo[name].get('ignore', False): continue
+                if not excinfo[name].get('opaque', False): continue
+            else:
+                # Not in exception data, cannot be 'opaque pointer'
+                continue
+
+            try:
+                lst = cftypes[name]
+            except KeyError:
+                lst = cftypes[name] = []
+                
+            lst.append({'typestr': value['typestr'], 'arch':info['arch']})
+
+    result = {}
+    createPointer = func_call("objc.createOpaquePointerType")
+    for name, values in sorted(cftypes.items()):
+        result[name] = createPointer(name, value['typestr'])
+
+    return result
+
 def extract_cftypes(exceptions, headerinfo):
     cftypes = {}
     excinfo = exceptions['definitions'].get('cftypes', {})
@@ -307,6 +335,7 @@ def extract_cftypes(exceptions, headerinfo):
         for name, value in info['definitions'].get('cftypes',{}).items():
             if name in excinfo:
                 if excinfo[name].get('ignore', False): continue
+                if excinfo[name].get('opaque', False): continue
 
             try:
                 lst = cftypes[name]
@@ -756,6 +785,10 @@ def emit_cftypes(fp, cftypes):
     if cftypes:
         print >>fp, "cftypes=%r"%(cftypes,)
 
+def emit_opaque(fp, opaque):
+    if opaque:
+        print >>fp, "misc.update(%r)"%(opaque,)
+
 def extract_literal(exceptions, headerinfo):
     excinfo = exceptions['definitions'].get('literals', {})
 
@@ -802,6 +835,7 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_literal(fp, extract_literal(exceptions, headerinfo))
         emit_functions(fp, extract_functions(exceptions, headerinfo))
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
+        emit_opaque(fp, extract_opaque_cftypes(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'formal_protocols'))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'informal_protocols'))

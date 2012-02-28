@@ -102,7 +102,7 @@ def merge_exceptions(current, updates):
 
     return current
 
-def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch, link_framework):
+def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch, link_framework, only_headers):
     if start_header is None:
         path = objc.dyld_framework('Headers', framework)
 
@@ -135,7 +135,8 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
             arch=arch,
             preheaders=preheaders,
             extraheaders=extraheaders,
-            link_framework=link_framework)
+            link_framework=link_framework,
+            only_headers=only_headers)
             
     prs.parse()
 
