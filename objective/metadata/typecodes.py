@@ -4,11 +4,20 @@ A simple type code calculator
 TODO:
 - Calculation of typestr for struct typedefs doesn't work as well as I'd like
   (in the from_ast function), haven't looked into that yet
+- TODO: Better handling of incomplete struct type, in particular this case:
+
+    typedef struct Foo Foo;
+    struct Foo {
+       int a;
+    }
+
+  Used in the header file for CGAffineTransform
 
 """
 from objective.cparser import c_ast
 import objc
 from ast_tools import constant_fold, parse_int
+import collections
 
 
 class _Visitor (c_ast.NodeVisitor):
@@ -16,6 +25,14 @@ class _Visitor (c_ast.NodeVisitor):
         super(_Visitor, self).__init__()
         self._registry = registry
         self._seen_structs = {}
+        self._incomplete_structs = collections.defaultdict(list)
+
+    def finish(self):
+        for struct_name, type_nodes in self._incomplete_structs.items():
+            if not type_nodes: continue
+
+            for node in type_nodes:
+                self._registry.add_typedef(node.name, node.type)
 
     def visit_Interface(self, node):
         self.generic_visit(node)
@@ -30,6 +47,12 @@ class _Visitor (c_ast.NodeVisitor):
             if node.name not in self._seen_structs:
                 self._seen_structs[node.name] = node
 
+                if node.name in self._incomplete_structs:
+                    for type_node in self._incomplete_structs[node.name]:
+                        self._registry.add_typedef(type_node.name, node, force=True)
+                    self._incomplete_structs[node.name] = []
+
+
     def visit_Typedef(self, node):
         type = node.type
         while isinstance(type, c_ast.TypeDecl):
@@ -38,7 +61,9 @@ class _Visitor (c_ast.NodeVisitor):
             if type.name in self._seen_structs:
                 self._registry.add_typedef(node.name, self._seen_structs[type.name])
                 return
-                
+            else:
+                self._incomplete_structs[type.name].append(node)
+
         self._registry.add_typedef(node.name, node.type)
 
     def visit_EnumeratorList(self, node):
@@ -89,6 +114,7 @@ class TypeCodes (object):
     def fill_from_ast(self, ast):
         v = _Visitor(self)
         v.visit(ast)
+        v.finish()
 
     def _add_enum(self, node):
         pass
@@ -96,8 +122,8 @@ class TypeCodes (object):
     def add_classdef(self, name):
         self._definitions[name] = objc._C_ID
 
-    def add_typedef(self, name, node):
-        if name in self._definitions:
+    def add_typedef(self, name, node, force=False):
+        if not force and (name in self._definitions):
             return
 
         if isinstance(node, (str, unicode)):
