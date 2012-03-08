@@ -102,7 +102,7 @@ def merge_exceptions(current, updates):
 
     return current
 
-def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch, link_framework, only_headers):
+def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch, link_framework, only_headers, typemap):
     if start_header is None:
         path = objc.dyld_framework('Headers', framework)
 
@@ -112,11 +112,19 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
                     framework, options.arch)
             sys.exit(1)
 
-        path = os.path.dirname(path)
+        path = framework_path = os.path.dirname(path)
         path =  os.path.join(sdk_root, path[1:], 'Headers')
         if not os.path.exists(path):
-            print >>sys.stderr, "Framework without headers"
-            sys.exit(1)
+            print framework_path
+            if not os.path.exists(os.path.join(sdk_root, framework_path[1:])):
+                path =  os.path.join(framework_path, 'Headers')
+                if not os.path.exists(path):
+                    print >>sys.stderr, "Framework without headers[2]"
+                    sys.exit(1)
+
+            else:
+                print >>sys.stderr, "Framework without headers[1]"
+                sys.exit(1)
 
         files = os.listdir(path)
         if len(files) == 1:
@@ -136,7 +144,9 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
             preheaders=preheaders,
             extraheaders=extraheaders,
             link_framework=link_framework,
-            only_headers=only_headers)
+            only_headers=only_headers,
+            typemap=typemap,
+        )
             
     prs.parse()
 

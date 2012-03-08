@@ -103,13 +103,18 @@ class _Visitor (c_ast.NodeVisitor):
 
 
 class TypeCodes (object):
-    def __init__(self):
+    def __init__(self, typemap=None):
         self._definitions = {}
         self._special = set()
 
         self.__add_predefined()
         self._enum_values = {}
         self._classes = set()
+
+        if typemap is None:
+            self._typemap = {}
+        else:
+            self._typemap = typemap
 
     def fill_from_ast(self, ast):
         v = _Visitor(self)
@@ -171,6 +176,13 @@ class TypeCodes (object):
 
 
     def __typestr_for_node(self, node, name=None):
+        value, special = self.__calc_typestr_for_node(node, name)
+        if value in self._typemap:
+            value = self._typemap[value]
+
+        return value, special
+
+    def __calc_typestr_for_node(self, node, name=None):
         special = False
         if isinstance(node, c_ast.TypeDecl):
             return self.__typestr_for_node(node.type, name)

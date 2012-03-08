@@ -129,7 +129,7 @@ class FrameworkParser (object):
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None, only_headers=None):
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None, only_headers=None, typemap=None):
         self.framework = framework
         self.link_framework = link_framework if link_framework is not None else framework
         self.framework_path = '/%s.framework/'%(framework,)
@@ -146,6 +146,7 @@ class FrameworkParser (object):
         self.additional_headers = []
         self.arch = arch
         self.sdk = sdk
+        self.typemap = typemap
         
         self.headers = set()
 
@@ -215,7 +216,7 @@ class FrameworkParser (object):
         finally:
             os.unlink(fname)
 
-        self.typecodes = TypeCodes()
+        self.typecodes = TypeCodes(self.typemap)
         self.typecodes.fill_from_ast(ast)
         
         # - And finally walk the AST to find useful definitions
@@ -694,7 +695,8 @@ class FrameworkParser (object):
         }
 
         if 'Create' in name or 'Copy' in name:
-            func['already_cfretained'] = True
+            # FIXME: Net to check that the next character is not a lowercase alpha.
+            func['retval']['already_cfretained'] = True
 
 
         if 'inline' in funcspec or '__inline__' in funcspec:

@@ -32,6 +32,13 @@ import_command.add_argument("--bridgesupport-file", metavar="FILE", help="Use th
 compile_command = subparsers.add_parser("compile", help="Compile data into the PyObjC data file")
 
 
+def make_pairs(sequence):
+    sequence = iter(sequence)
+    while True:
+        first = sequence.next()
+        second = sequence.next()
+        yield (first, second)
+
 def parse_ini(ini_file, ini_sections):
     ini_dir = os.path.dirname(ini_file)
 
@@ -91,6 +98,13 @@ def parse_ini(ini_file, ini_sections):
         else:
             info["only-headers"] = None
 
+        if cfg.has_option(section, "DYLD_FRAMEWORK_PATH"):
+            os.environ["DYLD_FRAMEWORK_PATH"] = cfg.get(section, "DYLD_FRAMEWORK_PATH")
+
+        info["typemap"] = {}
+        if cfg.has_option(section, "typemap"):
+            for orig, new in make_pairs(cfg.get(section, "typemap").split()):
+                info["typemap"][orig] = new
         yield info
 
 def main():
@@ -115,7 +129,8 @@ def main():
                     args.sdk_root, 
                     args.arch,
                     info["link-framework"],
-                    info["only-headers"]
+                    info["only-headers"],
+                    info["typemap"],
                     )
 
         elif args.command == "import":
