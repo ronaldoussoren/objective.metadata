@@ -91,7 +91,7 @@ def parse_ini(ini_file, ini_sections):
         if cfg.has_option(section, "compiled"):
             info["compiled"] = os.path.join(ini_dir, cfg.get(section, "compiled"))
         else:
-            info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["python-package"], "_metadata.py")
+            info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["python-package"].replace('.', os.path.sep), "_metadata.py")
 
         if cfg.has_option(section, "only-headers"):
             info["only-headers"] = [x.strip() for x in cfg.get(section, "only-headers").split(",")]

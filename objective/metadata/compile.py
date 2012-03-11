@@ -125,7 +125,7 @@ def merge_defs(defs, key):
         return {key: value}
 
     else:
-        raise ValueError('Merge needed')
+        raise MergeNeededException('Merge needed %r'%(uniq,))
 
 
 def merge_definition_lists(defs):
@@ -418,7 +418,7 @@ def extract_externs(exceptions, headerinfo):
 
     # Finally add definitions that were manually added to  the exceptions file
     for name in excinfo:
-        if name not in result and 'type_override' in excinfo['name']:
+        if name not in result and 'type_override' in excinfo[name]:
             result[name] = [{'typestr':excinfo['name']['type_override'], 'arch': None }]
 
     for name in result:
@@ -468,7 +468,7 @@ def extract_enums(exceptions, headerinfo):
 
 
 def exception_method(exceptions, key):
-    for m in exceptions.get(key[0], {'methods':()})['methods']:
+    for m in exceptions.get(key[0], {'methods':()}).get('methods', ()):
         if m['selector'] == key[1] and m['class_method'] == key[2]:
             return m
     return None
@@ -576,8 +576,31 @@ def merge_method_info(infolist, exception, only_special):
                         del args[idx+2]['type_override']
 
             else:
-                info[k] = exception[k]
-        pass
+                result[k] = exception[k]
+        
+        for rec in itertools.chain([result.get('retval')], result.get('arguments', {}).values()):
+            if 'c_array_length_in_arg' in rec:
+                v = rec['c_array_length_in_arg']
+                if isinstance(v, (list, tuple)):
+                    input, output = v
+                    input += 2
+                    output += 2
+                    v = input, output
+                else:
+                    v += 2
+                rec['c_array_length_in_arg'] = v
+
+            if 'callable' in rec:
+                def replace_typestr(value):
+                    if 'typestr' in value:
+                        value['type'] = value['typestr']
+                        del value['typestr']
+                    for v in value.values():
+                        if isinstance(v, dict):
+                            replace_typestr(v)
+                replace_typestr(rec['callable'])
+
+
 
     if 'retval' in result:
         if 'type' in result['retval']:
@@ -586,6 +609,15 @@ def merge_method_info(infolist, exception, only_special):
         for k in ('type_modifier', 'sel_of_type'):
             if k in result['retval']:
                 result['retval'][k] = bstr(result['retval'][k])
+
+        if 'callable' in result['retval']:
+            callable = result['retval']['callable']
+            for value in itertools.chain([callable.get('retval',{})], callable.get('arguments', {}).values()):
+                if isinstance(value['type'], str):
+                    value['type'] = bstr(value['type'])
+                else:
+                    value['type'] = sel32or64(bstr(value['type'][0]), bstr(value['type'][1]))
+
 
         if not result['retval']:
             del result['retval']
@@ -601,6 +633,14 @@ def merge_method_info(infolist, exception, only_special):
                         a[k] = sel32or64(bstr(a[k][0]), bstr(a[k][1]))
                     else:
                         a[k] = bstr(a[k])
+
+            if 'callable' in a:
+                callable = a['callable']
+                for value in itertools.chain([callable.get('retval',{})], callable.get('arguments', {}).values()):
+                    if isinstance(value['type'], str):
+                        value['type'] = bstr(value['type'])
+                    else:
+                        value['type'] = sel32or64(bstr(value['type'][0]), bstr(value['type'][1]))
 
             if not a:
                 del result['arguments'][i]
@@ -638,7 +678,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
                 # ensure that those are visible to the metadata system.
                 getter = prop['name']
                 setter = 'set' + getter[0].upper() + getter[1:] + ":"
-                for item in prop['attributes']:
+                for item in prop.get('attributes', ()):
                     if item == 'readonly':
                         setter = None
                     elif item[0] == 'getter':
@@ -687,6 +727,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
                     result[key][-1]['arch'] = info['arch']
                     result[key][-1]['class'] = name
 
+    # XXX: copy data that's only in the exceptions file
     for key in list(result):
         result[key] = merge_method_info(result[key], 
                 exception_method(excinfo, key), section == 'classes')
@@ -705,7 +746,7 @@ def extract_structs(exceptions, headerinfo):
     structs = {}
     for info in headerinfo:
         for name, value in info['definitions'].get('structs', {}).items():
-            if name in excinfo and excinfo[name].get(ignore, False):
+            if name in excinfo and excinfo[name].get('ignore', False):
                 continue
 
             if name not in structs:
@@ -732,10 +773,14 @@ def emit_structs(fp, structs):
 
 def emit_externs(fp, externs):
     result = []
+    special = {}
     for k, v in sorted(externs.items()):
         if isinstance(v, dict):
             if v['typestr'] == '@':
                 result.append(k)
+
+            elif isinstance(v['typestr'], _wrapped_call):
+                special[k] = v['typestr']
             else:
                 result.append('%s@%s'%(k, v['typestr']))
 
@@ -744,21 +789,32 @@ def emit_externs(fp, externs):
 
     fp.write("constants = '''$%s$'''\n"%(
         '$'.join(result),))
+    if special:
+        for k, v in special.items():
+            fp.write("contants = constants + '$%s@%%s$'%%(%r,)\n"%(k, v))
+
 
 def emit_enums(fp, enums):
     result = []
+    expr = {}
     for k, v in sorted(enums.items()):
         if isinstance(v, dict):
-            result.append('%s@%s'%(k, v['value']))
+            if isinstance(v['value'], _wrapped_call):
+                expr[k] = v['value']
+            else:
+                result.append('%s@%s'%(k, v['value']))
 
         elif isinstance(v, (int, long)):
             result.append('%s@%s'%(k, v))
+
 
         else:
             raise ValueError("manual mapping needed")
 
     fp.write("enums = '''$%s$'''\n"%(
         '$'.join(result),))
+    if expr:
+        fp.write('misc.update(%r)\n'%(expr,))
 
 
 def emit_method_info(fp, method_info):

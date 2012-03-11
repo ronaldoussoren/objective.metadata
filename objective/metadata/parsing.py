@@ -19,19 +19,20 @@ from objective.cparser import parse_file, c_ast
 
 LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
 DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
-INT_RE=re.compile('^\(?(?:\(long long\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
-FLOAT_RE=re.compile('^([-]?\d+\.\d+)$')
+INT_RE=re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
+FLOAT_RE=re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$')
 STR_RE=re.compile('^"(.*)"$')
 UNICODE_RE=re.compile('^@"(.*)"$')
 UNICODE2_RE=re.compile('^CFSTR\("(.*)"\)$')
 ALIAS_RE=re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
 NULL_VALUE=re.compile(r'\(\([A-Za-z0-9]+\)NULL\)')
+CALL_VALUE=re.compile(r'^[A-Za-z0-9]+\([A-Za-z0-9]*\)$')
 
 FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
 ERR_SUB_DEFINE_RE=re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
-OR_EXPR_RE=re.compile(r"\([A-Za-z0-9]*(\|[A-Za-z0-9]*)*\)")
+OR_EXPR_RE=re.compile(r"\([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*\)")
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
@@ -216,7 +217,7 @@ class FrameworkParser (object):
         finally:
             os.unlink(fname)
 
-        self.typecodes = TypeCodes(self.typemap)
+        self.typecodes = TypeCodes(self.arch, self.typemap)
         self.typecodes.fill_from_ast(ast)
         
         # - And finally walk the AST to find useful definitions
@@ -562,6 +563,11 @@ class FrameworkParser (object):
                     print "IGNORE", repr(key), repr(value)
                     continue
 
+                value = value.strip()
+
+                if value in ('static inline',):
+                    continue
+
                 if not value:
                     # Ignore empty macros
                     continue
@@ -605,7 +611,7 @@ class FrameworkParser (object):
                         continue
 
                     value = m.group(1)
-                    if value not in ('extern', 'static', 'inline', 'float'):
+                    if value not in ('extern', 'static', 'inline', 'float',):
                         self.aliases[key] = m.group(1)
                     continue
 
@@ -653,6 +659,7 @@ class FrameworkParser (object):
                     continue
 
 
+
                 m = SC_SCHEMA_RE.match(value)
                 if m is not None:
                     self.externs[key] = objc._C_ID
@@ -663,7 +670,12 @@ class FrameworkParser (object):
                     self.expressions[key] = value
                     continue
 
-                print "Warning: ignore #define %s %s"%(key, value)
+                m = CALL_VALUE.match(value)
+                if m is not None:
+                    self.expressions[key] = value
+                    continue
+
+                print "Warning: ignore #define %r %r"%(key, value)
 
             m = FUNC_DEFINE_RE.match(ln)
             if m is not None:

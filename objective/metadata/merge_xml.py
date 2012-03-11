@@ -178,7 +178,10 @@ def update_classes(exceptions, xml):
                     'class_method': bool_attr(methnode, 'class_method'),
                 }
                 merge_method_info(node, methnode)
-                clsdata['methods'].append(node)
+                try:
+                    clsdata['methods'].append(node)
+                except KeyError:
+                    clsdata['methods'] = [node]
             
 
 

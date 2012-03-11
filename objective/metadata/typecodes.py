@@ -103,11 +103,11 @@ class _Visitor (c_ast.NodeVisitor):
 
 
 class TypeCodes (object):
-    def __init__(self, typemap=None):
+    def __init__(self, arch, typemap=None):
         self._definitions = {}
         self._special = set()
 
-        self.__add_predefined()
+        self.__add_predefined(arch)
         self._enum_values = {}
         self._classes = set()
 
@@ -288,7 +288,7 @@ class TypeCodes (object):
         # XXX
         
 
-    def __add_predefined(self):
+    def __add_predefined(self, arch):
         self.add_predefined('_Bool', objc._C_BOOL)
         self.add_predefined('char', objc._C_CHR)
         self.add_predefined('signed char', objc._C_CHR)
@@ -306,15 +306,29 @@ class TypeCodes (object):
         self.add_predefined('unsigned', objc._C_UINT)
         self.add_predefined('int signed', objc._C_INT)
         self.add_predefined('int unsigned', objc._C_UINT)
-        self.add_predefined('long', objc._C_LNG)
-        self.add_predefined('long int', objc._C_LNG)
-        self.add_predefined('int long', objc._C_LNG)
-        self.add_predefined('int signed long', objc._C_LNG)
-        self.add_predefined('int unsigned long', objc._C_ULNG)
-        self.add_predefined('signed long', objc._C_LNG)
-        self.add_predefined('unsigned long', objc._C_ULNG)
-        self.add_predefined('long signed', objc._C_LNG)
-        self.add_predefined('long unsigned', objc._C_ULNG)
+
+        if arch in ('x86_64', 'ppc64'):
+            self.add_predefined('long', objc._C_LNG_LNG)
+            self.add_predefined('long int', objc._C_LNG_LNG)
+            self.add_predefined('int long', objc._C_LNG_LNG)
+            self.add_predefined('int signed long', objc._C_LNG_LNG)
+            self.add_predefined('int unsigned long', objc._C_ULNG_LNG)
+            self.add_predefined('signed long', objc._C_LNG_LNG)
+            self.add_predefined('unsigned long', objc._C_ULNG_LNG)
+            self.add_predefined('long signed', objc._C_LNG_LNG)
+            self.add_predefined('long unsigned', objc._C_ULNG_LNG)
+
+        else:
+            self.add_predefined('long', objc._C_LNG)
+            self.add_predefined('long int', objc._C_LNG)
+            self.add_predefined('int long', objc._C_LNG)
+            self.add_predefined('int signed long', objc._C_LNG)
+            self.add_predefined('int unsigned long', objc._C_ULNG)
+            self.add_predefined('signed long', objc._C_LNG)
+            self.add_predefined('unsigned long', objc._C_ULNG)
+            self.add_predefined('long signed', objc._C_LNG)
+            self.add_predefined('long unsigned', objc._C_ULNG)
+
         self.add_predefined('long long', objc._C_LNG_LNG)
         self.add_predefined('int long long', objc._C_LNG_LNG)
         self.add_predefined('signed long long', objc._C_LNG_LNG)

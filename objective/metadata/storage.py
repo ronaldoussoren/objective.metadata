@@ -48,4 +48,8 @@ def load_framework_info(filename):
         data = fp.read()
         while data.startswith('#'):
             _, data = data.split('\n', 1)
-        return json.loads(data, object_pairs_hook=_decode_object)
+        try:
+            return json.loads(data, object_pairs_hook=_decode_object)
+        except:
+            print filename
+            raise
