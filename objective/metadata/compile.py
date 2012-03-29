@@ -659,7 +659,7 @@ def merge_method_info(infolist, exception, only_special):
 
 def extract_method_info(exceptions, headerinfo, section='classes'):
     result = {}
-    excinfo = exceptions['definitions'].get(section, {})
+    excinfo = exceptions['definitions'].get("classes", {})
 
     for info in headerinfo:
         for name, value in info['definitions'].get(section, {}).items():
@@ -729,8 +729,12 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
 
     # XXX: copy data that's only in the exceptions file
     for key in list(result):
+        if section != 'classes':
+            use_key = ('NSObject',) + key[1:]
+        else:
+            use_key = key
         result[key] = merge_method_info(result[key], 
-                exception_method(excinfo, key), section == 'classes')
+                exception_method(excinfo, use_key), section == 'classes')
 
     result = [info for info in result.values() if info is not None]
     if section != 'classes':
