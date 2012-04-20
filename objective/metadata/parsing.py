@@ -117,6 +117,9 @@ class DefinitionVisitor (FilteredVisitor):
         if node.name == 'NSObject' and node.categorie_name: #XXX
             self._parser.add_informal_protocol(node)
 
+        elif 'Delegat' in node.categorie_name:
+            self._parser.add_informal_protocol(node)
+
         self._parser.add_category(node)
 
     def visit_Interface(self, node):
@@ -211,6 +214,8 @@ class FrameworkParser (object):
                 use_cpp=True, cpp_args=[
                     '-arch', self.arch, '-isysroot', self.sdk,
                     '-E', '-arch', self.arch, '-D__attribute__(x)=',
+                    '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040',
+                    '-Wno-#warnings',
                     '-D__typeof__(x)=long',], cpp_path='clang')
 
             self.parse_defines(fname)
@@ -426,6 +431,7 @@ class FrameworkParser (object):
             '-o', fname[:-2], 
             '-arch', self.arch,
             '-isysroot', self.sdk,
+            '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings',
             fname,
             '-framework', self.link_framework])
         xit = p.wait()
@@ -526,7 +532,7 @@ class FrameworkParser (object):
 
     def parse_defines(self, fname):
         p = subprocess.Popen(
-            ['clang', '-arch', self.arch, '-isysroot', self.sdk, '-E', '-Wp,-dD', fname],
+            ['clang', '-arch', self.arch, '-isysroot', self.sdk, '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings', '-E', '-Wp,-dD', fname],
             stdout=subprocess.PIPE)
         data = p.communicate()[0]
         xit = p.wait()
@@ -537,6 +543,7 @@ class FrameworkParser (object):
         curfile = None
         lines = data.splitlines()
         for ln_idx, ln in enumerate(lines):
+
             m = LINE_RE.match(ln)
             if m is not None:
                 curfile = m.group(1)
@@ -547,6 +554,8 @@ class FrameworkParser (object):
 
             if self.only_headers:
                 if os.path.basename(curfile) not in self.only_headers:
+                    if curfile and 'NSSimpleHorizontalTypesetter' in curfile:
+                        print "skip", curfile
                     continue
 
             m = DEFINE_RE.match(ln)

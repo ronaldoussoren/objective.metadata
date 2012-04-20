@@ -44,6 +44,15 @@ class bstr(str):
     def __repr__(self):
         return 'b' + super(bstr, self).__repr__()
 
+class ustr(object):
+    def __init__(self, value):
+        self._value = value
+
+    def __repr__(self):
+        value = self._value.encode('utf-8')
+        return 'b%r.decode("utf-8")'%(value,)
+
+
 
 
 class _wrapped_call (object):
@@ -188,7 +197,7 @@ def extract_informal_protocols(exceptions, headerinfo):
 
     for name in found:
         if len(found[name]) == 1:
-            result[name] = informal_protocol(name, map(calc_selector, info[name][0]))
+            result[name] = informal_protocol(name, map(calc_selector, found[name][0]['methods']))
 
         else:
             # FIXME: This is too simple, need to actually merge the list of definitions
@@ -201,6 +210,10 @@ def extract_informal_protocols(exceptions, headerinfo):
 def calc_func_proto(exc, info, arch):
     types = []
     metadata = {}
+
+    if info.get('variadic'):
+        metadata['variadic'] = info['variadic']
+
     if 'retval' in exc and 'type_override' in exc['retval']:
         t = exc['retval']['type_override']
         if isinstance(t, (list, tuple)):
@@ -257,6 +270,14 @@ def calc_func_proto(exc, info, arch):
         if 'type_override' in arg:
             del arg['type_override']
 
+        if 'sel_of_type' in arg:
+            v = arg['sel_of_type']
+            if isinstance(v, (list, tuple)):
+                v = sel32or64(bstr(v[0]), bstr(v[1]))
+            else:
+                v = bstr(v)
+            arg['sel_of_type'] = v
+
         if arg:
             metadata['arguments'][idx] = arg
 
@@ -277,7 +298,7 @@ def extract_functions(exceptions, headerinfo):
 
             typestr, metadata = calc_func_proto(excinfo.get(name, {}), value, info['arch'])
             value = { 'typestr': typestr, 'metadata': metadata, 'arch': info['arch'] }
-            
+
             try:
                 functions[name].append(value)
             except KeyError:
@@ -320,9 +341,20 @@ def extract_opaque_cftypes(exceptions, headerinfo):
                 
             lst.append({'typestr': value['typestr'], 'arch':info['arch']})
 
+    for name, value in excinfo.items():
+        if name in cftypes: continue
+        if 'typestr' not in value: continue
+        if 'opaque' not in value: continue
+
+        cftypes[name] = [{'typestr': value['typestr'], 'arch': info['arch']}]
+
     result = {}
     createPointer = func_call("objc.createOpaquePointerType")
     for name, values in sorted(cftypes.items()):
+        if 'typestr' not in value:
+            print "WARNING: Skip %r, no typestr found"%(name,)
+            continue
+
         result[name] = createPointer(name, value['typestr'])
 
     return result
@@ -356,6 +388,7 @@ def extract_cftypes(exceptions, headerinfo):
     for name, value in excinfo.items():
         if name in cftypes: continue
         if 'typestr' not in value: continue
+        if 'opaque' in value: continue
 
         result.append(
             (name, bstr(value['typestr']), value.get('gettypeid_func'), value.get('tollfree'))
@@ -438,6 +471,14 @@ def extract_enums(exceptions, headerinfo):
                 if excinfo[name].get('ignore', False): continue
                 if excinfo[name].get('value'):
                     values[name] = {'value': excinfo[name]['value'] }
+                    continue
+
+                if excinfo[name].get('type') == 'unicode':
+                    if name in result:
+                        result[name].append({'value': unichr(value), 'arch': info['arch']})
+
+                    else:
+                        result[name] = [{'value': unichr(value), 'arch': info['arch']}]
                     continue
 
             if name in result:
@@ -637,6 +678,9 @@ def merge_method_info(infolist, exception, only_special):
             if 'callable' in a:
                 callable = a['callable']
                 for value in itertools.chain([callable.get('retval',{})], callable.get('arguments', {}).values()):
+                    if 'type' not in value:
+                        raise ValueError("%s %s"%(
+                            infolist[0]['class'], infolist[0]['selector']))
                     if isinstance(value['type'], str):
                         value['type'] = bstr(value['type'])
                     else:
@@ -733,6 +777,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
             use_key = ('NSObject',) + key[1:]
         else:
             use_key = key
+
         result[key] = merge_method_info(result[key], 
                 exception_method(excinfo, use_key), section == 'classes')
 
@@ -795,7 +840,7 @@ def emit_externs(fp, externs):
         '$'.join(result),))
     if special:
         for k, v in special.items():
-            fp.write("contants = constants + '$%s@%%s$'%%(%r,)\n"%(k, v))
+            fp.write("constants = constants + '$%s@%%s$'%%(%r,)\n"%(k, v))
 
 
 def emit_enums(fp, enums):
@@ -805,6 +850,10 @@ def emit_enums(fp, enums):
         if isinstance(v, dict):
             if isinstance(v['value'], _wrapped_call):
                 expr[k] = v['value']
+
+            elif isinstance(v['value'], unicode):
+                expr[k] = ustr(v['value'])
+
             else:
                 result.append('%s@%s'%(k, v['value']))
 

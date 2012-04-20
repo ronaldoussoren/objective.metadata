@@ -8,6 +8,7 @@ import os
 import glob
 import platform
 import ConfigParser
+import subprocess
 
 from . import compile
 from . import merge_xml
@@ -107,30 +108,67 @@ def parse_ini(ini_file, ini_sections):
                 info["typemap"][orig] = new
         yield info
 
+_sdk_root = None
+def sdk_root():
+    global _sdk_root
+    if _sdk_root is None:
+        out = subprocess.check_output(['xcode-select', '-print-path']).strip()
+        if not out:
+            if os.path.exists('/Applications/Xcode.app'):
+                _sdk_root = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/'
+        else:
+            _sdk_root = os.path.join(
+                out, 'SDKs')
+
+    return _sdk_root
+
+def path_for_sdk_version(version):
+    return os.path.join(sdk_root(), 'MacOSX%s.sdk'%(version,))
+
 def main():
     args = parser.parse_args()
 
     for info in parse_ini(args.ini_file, args.ini_section):
         if args.command == "scan":
-            if args.verbose:
-                print "Scan framework=%r sdk=%r arch=%r"%(
-                        info["framework"], args.sdk_root, args.arch)
 
-            osver = args.sdk_root
-            if osver is None:
-                osver = platform.mac_ver()[0]
-            else:
-                osver = os.path.basename(osver)[6:-4]
-            raw_fn = os.path.join(info["raw"], "%s-%s.fwinfo"%(args.arch, osver))
-            scan.scan_headers(raw_fn, info["exceptions"], info["framework"],
-                    info["start-header"], 
-                    info["pre-headers"], 
-                    info["post-headers"], 
-                    args.sdk_root, 
-                    args.arch,
-                    info["link-framework"],
-                    info["only-headers"],
-                    info["typemap"],
+            for arch in args.arch.split(','):
+                arch = arch.strip()
+                if not arch: continue
+
+                for sdk in args.sdk_root.split(','):
+                    sdk = sdk.strip()
+                    if not sdk: continue
+
+                    try:
+                        float(sdk)
+                    except ValueError:
+                        pass
+
+                    else:
+                        sdk = path_for_sdk_version(sdk)
+
+                    osver = sdk
+                    if osver is None:
+                        osver = platform.mac_ver()[0]
+                    else:
+                        osver = os.path.basename(osver)[6:-4]
+
+                    raw_fn = os.path.join(info["raw"], "%s-%s.fwinfo"%(arch, osver))
+
+                    if args.verbose:
+                        print "Scan framework=%r sdk=%r arch=%r"%(
+                                info["framework"], sdk, arch)
+                    scan.scan_headers(raw_fn, 
+                        info["exceptions"], 
+                        info["framework"],
+                        info["start-header"], 
+                        info["pre-headers"], 
+                        info["post-headers"], 
+                        sdk, 
+                        arch,
+                        info["link-framework"],
+                        info["only-headers"],
+                        info["typemap"],
                     )
 
         elif args.command == "import":
