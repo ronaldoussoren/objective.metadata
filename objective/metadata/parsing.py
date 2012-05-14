@@ -63,6 +63,17 @@ class DefinitionVisitor (FilteredVisitor):
     A NodeVisitor that calls back to the framework parser when it
     locates interesting definitions.
     """
+    def __init__(self, parser):
+        super(DefinitionVisitor, self).__init__(parser)
+        self.__all_structs = {}
+
+    def visit(self, node):
+        super(DefinitionVisitor, self).visit(node)
+
+        if isinstance(node, c_ast.Typedef):
+            if isinstance(node.type.type, c_ast.Struct):
+                self.__all_structs[node.name] = node.type.type
+
     def visit_Protocol(self, node):
         self.generic_visit(node)
 
@@ -84,6 +95,12 @@ class DefinitionVisitor (FilteredVisitor):
             if isinstance(node.type, c_ast.TypeDecl):
                 if node.type.declname in self._parser.cftypes:
                     self._parser.aliases[node.name] = node.type.declname
+
+            if isinstance(node.type.type, c_ast.IdentifierType):
+                if len(node.type.type.names) == 1:
+                    type_name = node.type.type.names[0]
+                    if type_name in self.__all_structs:
+                        self._parser.add_struct(node.name, self.__all_structs[type_name])
 
             if isinstance(node.type.type, c_ast.Struct):
                 self._parser.add_struct(node.name, node.type.type)
@@ -416,14 +433,17 @@ class FrameworkParser (object):
 
         return False
 
-    def _calculate_enum_value(self, name):
+    def _calculate_enum_value(self, name, unsigned=False):
         fname = '_prs_%s.m'%(self.framework,)
         with open(fname, 'w') as fp:
             self._gen_includes(fp)
 
             fp.write("#include <stdio.h>\n")
             fp.write("int main(void) {\n")
-            fp.write("   printf(\"%%lld\\n\", (long long)%s);\n"%(name,))
+            if unsigned:
+                fp.write("   printf(\"%%llu\\n\", (unsigned long long)%s);\n"%(name,))
+            else:
+                fp.write("   printf(\"%%lld\\n\", (long long)%s);\n"%(name,))
             fp.write("   return 0;\n")
             fp.write("}\n")
 
@@ -483,12 +503,18 @@ class FrameworkParser (object):
                     value = parse_int(value.value)
 
             prev_name = item.name
-            if isinstance(value, int):
+            if isinstance(value, (int, long)):
                 prev_value = value
             else:
                 prev_value = None
 
-                value = self._calculate_enum_value(item.name)
+                if isinstance(value, c_ast.ID):
+                    self.aliases[item.name] = value.name
+                    continue
+
+                else:
+                    value = self._calculate_enum_value(item.name)
+
                 if value is None:
                     continue
 

@@ -214,6 +214,11 @@ def calc_func_proto(exc, info, arch):
     if info.get('variadic'):
         metadata['variadic'] = info['variadic']
 
+    for k in exc:
+        if k in ('args', 'retval'): 
+            continue
+        metadata[k] = exc[k]
+
     if 'retval' in exc and 'type_override' in exc['retval']:
         t = exc['retval']['type_override']
         if isinstance(t, (list, tuple)):
@@ -240,11 +245,35 @@ def calc_func_proto(exc, info, arch):
     if retval:
         metadata['retval'] = retval
 
+    if 'function' in retval:
+        retval['callable'] = dict(retval['function'])
+        del retval['function']
+        d = {}
+        for k, val in enumerate(retval['callable']['args']):
+            val = dict(val)
+            if 'typestr' in val:
+                val['type'] = val['typestr']
+                del val['typestr']
+            d[k] = val
+        retval['callable']['arguments'] = d
+        del retval['callable']['args']
+
+        if 'retval' in retval['callable']:
+            val = dict(retval['callable']['retval'])
+            if 'typestr' in val:
+                if isinstance(val['typestr'], (list, tuple)):
+                    val['type'] = sel32or64(*[bstr(x) for x in val['typestr']])
+                else:
+                    val['type'] = bstr(val['typestr'])
+                del val['typestr']
+            retval['callable']['retval'] = val
+        retval['callable']['args'] = d
+
     metadata['arguments'] = {}
 
     for idx, a in enumerate(info['args']):
 
-        # C has 'aFucntion(void)' as the function prototype for functions
+        # C has 'aFunction(void)' as the function prototype for functions
         # without arguments.
         if a.get('name') is None and a.get('typestr') == 'v': continue
 
@@ -277,6 +306,47 @@ def calc_func_proto(exc, info, arch):
             else:
                 v = bstr(v)
             arg['sel_of_type'] = v
+
+        if 'function' in arg:
+            # XXX: This is suboptimal at best
+            arg['callable'] = dict(arg['function'])
+            del arg['function']
+
+            if 'args' not in arg['callable']:
+                print arg
+                print info
+            if isinstance(arg['callable']['args'], (list, tuple)):
+                d = {}
+                for k, v in enumerate(arg['callable']['args']):
+                    v = dict(v)
+                    if 'typestr' in v:
+                        if isinstance(v['typestr'], (list, tuple)):
+                            v['type'] = sel32or64(*[bstr(x) for x in v['typestr']])
+                        else:
+                            v['type'] = bstr(v['typestr'])
+                        del v['typestr']
+                    d[k] = v
+                arg['callable']['args'] = d
+
+            if 'retval' in arg['callable']:
+                v = dict(arg['callable']['retval'])
+                if 'typestr' in v:
+                    v['type'] = v['typestr']
+                    del v['typestr']
+                arg['callable']['retval'] = v
+
+
+
+
+            try:
+                arg['callable']['arguments'] = arg['callable']['args']
+                del arg['callable']['args']
+            except KeyError:
+                pass
+
+        for k in arg:
+            if isinstance(arg[k], list):
+                arg[k] = tuple(arg[k])
 
         if arg:
             metadata['arguments'][idx] = arg
@@ -320,6 +390,21 @@ def extract_functions(exceptions, headerinfo):
             result[name] = (info['typestr'],)
     return result
 
+def extract_opaque(exceptions, headerinfo):
+    excinfo = exceptions['definitions'].get('opaque', {})
+
+    opaque = {}
+    createPointer = func_call("objc.createOpaquePointerType")
+    for name, info in excinfo.items():
+        if 'typestr' not in info:
+            print "WARNING: Skip %r, no typestr found"%(name,)
+            continue
+
+        opaque[name] = createPointer(name, info['typestr'])
+
+    return opaque
+
+
 
 def extract_opaque_cftypes(exceptions, headerinfo):
     cftypes = {}
@@ -356,6 +441,40 @@ def extract_opaque_cftypes(exceptions, headerinfo):
             continue
 
         result[name] = createPointer(name, value['typestr'])
+
+    return result
+
+def extract_aliases(exceptions, headerinfo):
+    aliases = {}
+    excinfo = exceptions['definitions'].get('aliases', {})
+
+    for info in headerinfo:
+        for orig, alias in info['definitions'].get('aliases', {}).items():
+            if orig in excinfo:
+                if excinfo[orig].get('ignore', False): continue
+                v = excinfo[orig].get('alias')
+                if v is not None:
+                    alias = v
+            
+            try:
+                lst = aliases[orig]
+            except KeyError:
+                lst = aliases[orig] = []
+
+            lst.append({'alias': alias, 'arch':info['arch']})
+
+    result = {}
+    for name, values in sorted(aliases.items()):
+        alias = merge_defs(values, 'alias')['alias']
+
+        result[name] = alias
+
+    for name, value in excinfo.items():
+        if name in result: continue
+        if 'alias' not in value: continue
+        if value.get('ignore', False): continue
+
+        result[name] = value['alias']
 
     return result
 
@@ -416,8 +535,8 @@ def extract_expressions(exceptions, headerinfo):
 
     # Finally add definitions that were manually added to  the exceptions file
     for name in excinfo:
-        if name not in result and 'value' in excinfo['name']:
-            result[name] = [{'typestr':excinfo['name']['value'], 'arch': None }]
+        if name not in result and 'value' in excinfo[name]:
+            result[name] = [{'typestr':excinfo[name]['value'], 'arch': None }]
 
     for name in result:
         result[name] = merge_defs(result[name], 'value')['value']
@@ -452,7 +571,9 @@ def extract_externs(exceptions, headerinfo):
     # Finally add definitions that were manually added to  the exceptions file
     for name in excinfo:
         if name not in result and 'type_override' in excinfo[name]:
-            result[name] = [{'typestr':excinfo['name']['type_override'], 'arch': None }]
+            result[name] = [{'typestr':excinfo[name]['type_override'], 'arch': None }]
+        if name not in result and 'typestr' in excinfo[name]:
+            result[name] = [{'typestr':excinfo[name]['typestr'], 'arch': None }]
 
     for name in result:
         result[name] = merge_defs(result[name], 'typestr')
@@ -489,8 +610,8 @@ def extract_enums(exceptions, headerinfo):
 
     # Finally add definitions that were manually added to  the exceptions file
     for name in excinfo:
-        if name not in result and 'value' in excinfo['name']:
-            result[name] = [{'value':excinfo['name']['value'], 'arch': None }]
+        if name not in result and 'value' in excinfo[name]:
+            result[name] = [{'value':excinfo[name]['value'], 'arch': None }]
 
     for name in result:
         try:
@@ -549,7 +670,7 @@ def calc_type(choices):
         raise ValueError("merge typestrings: %r"%(choices,))
         
 
-def merge_method_info(infolist, exception, only_special):
+def merge_method_info(clsname, selector, class_method, infolist, exception, only_special):
     """
     Merge method metadata and exceptions and return the resulting 
     information dictionary. Returns ``None`` when there is no information
@@ -619,7 +740,7 @@ def merge_method_info(infolist, exception, only_special):
             else:
                 result[k] = exception[k]
         
-        for rec in itertools.chain([result.get('retval')], result.get('arguments', {}).values()):
+        for rec in itertools.chain([result.get('retval', {})], result.get('arguments', {}).values()):
             if 'c_array_length_in_arg' in rec:
                 v = rec['c_array_length_in_arg']
                 if isinstance(v, (list, tuple)):
@@ -695,9 +816,9 @@ def merge_method_info(infolist, exception, only_special):
         return None
     
     return {
-        'class': infolist[0]['class'],
-        'selector': infolist[0]['selector'],
-        'class_method': infolist[0]['class_method'],
+        'class': clsname,
+        'selector': selector,
+        'class_method': class_method,
         'metadata': result,
     }
 
@@ -778,8 +899,17 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
         else:
             use_key = key
 
-        result[key] = merge_method_info(result[key], 
+        result[key] = merge_method_info(key[0], key[1], key[2], result[key], 
                 exception_method(excinfo, use_key), section == 'classes')
+
+    if section == 'classes':
+        for clsname in excinfo:
+            for meth in excinfo[clsname].get('methods', ()):
+                key = (clsname, meth['selector'], meth['class_method'])
+                if key in result:
+                    continue
+
+                result[key] = merge_method_info(clsname, meth['selector'], meth['class_method'], [], meth, section=='classes')
 
     result = [info for info in result.values() if info is not None]
     if section != 'classes':
@@ -798,12 +928,17 @@ def extract_structs(exceptions, headerinfo):
             if name in excinfo and excinfo[name].get('ignore', False):
                 continue
 
+
+            fieldnames = value['fieldnames']
+            if name in excinfo:
+                fieldnames = [str(x) for x in excinfo[name].get('fieldnames', fieldnames)]
+
             if name not in structs:
                 structs[name] = []
 
             structs[name].append({
                 'typestr': value['typestr'],
-                'fieldnames': value['fieldnames'],
+                'fieldnames': fieldnames,
                 'arch': info['arch'],
             })
 
@@ -927,6 +1062,10 @@ def emit_literal(fp, literals):
 def emit_expressions(fp, expressions):
     print >>fp, "expressions = %r"%(expressions)
 
+def emit_aliases(fp, aliases):
+    if aliases:
+        print >>fp, "aliases = %r"%(aliases,)
+
 def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     """
     Combine the data from header files scans and manual exceptions
@@ -943,8 +1082,10 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
         emit_enums(fp, extract_enums(exceptions, headerinfo))
         emit_literal(fp, extract_literal(exceptions, headerinfo))
         emit_functions(fp, extract_functions(exceptions, headerinfo))
+        emit_aliases(fp, extract_aliases(exceptions, headerinfo))
         emit_cftypes(fp, extract_cftypes(exceptions, headerinfo))
         emit_opaque(fp, extract_opaque_cftypes(exceptions, headerinfo))
+        emit_opaque(fp, extract_opaque(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'formal_protocols'))
         emit_method_info(fp, extract_method_info(exceptions, headerinfo, 'informal_protocols'))

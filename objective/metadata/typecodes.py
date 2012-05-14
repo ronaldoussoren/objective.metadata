@@ -289,6 +289,7 @@ class TypeCodes (object):
         
 
     def __add_predefined(self, arch):
+        self.add_predefined('Class', objc._C_CLASS)
         self.add_predefined('_Bool', objc._C_BOOL)
         self.add_predefined('char', objc._C_CHR)
         self.add_predefined('signed char', objc._C_CHR)
