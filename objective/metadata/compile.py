@@ -921,6 +921,8 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
 def extract_structs(exceptions, headerinfo):
     excinfo = exceptions['definitions'].get('structs', {})
     createStructType = func_call('objc.createStructType')
+    registerStructAlias = func_call('objc.registerStructAlias')
+    getName = func_call('objc._resolve_name')
 
     structs = {}
     for info in headerinfo:
@@ -928,10 +930,11 @@ def extract_structs(exceptions, headerinfo):
             if name in excinfo and excinfo[name].get('ignore', False):
                 continue
 
-
+            alias = None
             fieldnames = value['fieldnames']
             if name in excinfo:
                 fieldnames = [str(x) for x in excinfo[name].get('fieldnames', fieldnames)]
+                alias = excinfo[name].get('alias', None)
 
             if name not in structs:
                 structs[name] = []
@@ -939,6 +942,7 @@ def extract_structs(exceptions, headerinfo):
             structs[name].append({
                 'typestr': value['typestr'],
                 'fieldnames': fieldnames,
+                'alias': alias,
                 'arch': info['arch'],
             })
 
@@ -946,7 +950,12 @@ def extract_structs(exceptions, headerinfo):
     for name, values in structs.items():
         fieldnames = values[0]['fieldnames']
         typestr = merge_defs(values, 'typestr')['typestr']
-        result[name] = createStructType(name, typestr, fieldnames)
+        alias   = values[0]['alias']
+        if alias is None:
+            result[name] = createStructType(name, typestr, fieldnames)
+        else:
+            result[name] = registerStructAlias(typestr, getName(alias))
+
 
     return result
 
