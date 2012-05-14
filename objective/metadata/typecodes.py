@@ -4,15 +4,6 @@ A simple type code calculator
 TODO:
 - Calculation of typestr for struct typedefs doesn't work as well as I'd like
   (in the from_ast function), haven't looked into that yet
-- TODO: Better handling of incomplete struct type, in particular this case:
-
-    typedef struct Foo Foo;
-    struct Foo {
-       int a;
-    }
-
-  Used in the header file for CGAffineTransform
-
 """
 from objective.cparser import c_ast
 import objc
@@ -204,13 +195,18 @@ class TypeCodes (object):
 
             if node.decls is not None:
                 for d in node.decls:
-                    t, s = self.__typestr_for_node(d.type)
-                    if t is None:
-                        return None, None
-                    if s:
-                        special = True
+                    if isinstance(d.bitsize, c_ast.Constant) and d.bitsize.type == 'int':
+                        bits = parse_int(d.bitsize.value)
+                        result.append('b%d'%(bits,))
 
-                    result.append(t)
+                    else:
+                        t, s = self.__typestr_for_node(d.type)
+                        if t is None:
+                            return None, None
+                        if s:
+                            special = True
+
+                        result.append(t)
 
             result.append(objc._C_STRUCT_E)
             return ''.join(result), special
