@@ -65,6 +65,12 @@ class DefinitionVisitor (FilteredVisitor):
     """
     def __init__(self, parser):
         super(DefinitionVisitor, self).__init__(parser)
+
+        # Record all records seen in header files, even
+        # if they are not in a framework we're scanning.
+        # This way we can emit the expected metadata 
+        # for "typedef CGRect NSRect" (as used in the Foundation
+        # headers on x86_64)
         self.__all_structs = {}
 
     def visit(self, node):
