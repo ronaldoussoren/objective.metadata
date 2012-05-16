@@ -34,6 +34,10 @@ ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
 SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
 OR_EXPR_RE=re.compile(r"\([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*\)")
 
+CPP='clang'
+if int(os.uname()[2].split('.')[0]) <= 9:
+    CPP='gcc'
+
 
 class FilteredVisitor (c_ast.NodeVisitor):
     """ 
@@ -237,9 +241,12 @@ class FrameworkParser (object):
                 use_cpp=True, cpp_args=[
                     '-arch', self.arch, '-isysroot', self.sdk,
                     '-E', '-arch', self.arch, '-D__attribute__(x)=',
+                    '-D__asm__(...)=',
+                    '-D__volatile__(...)=',
+                    '-D__extension__=',
                     '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040',
                     '-Wno-#warnings',
-                    '-D__typeof__(x)=long',], cpp_path='clang')
+                    '-D__typeof__(x)=long',], cpp_path=CPP)
 
             self.parse_defines(fname)
         finally:
@@ -453,7 +460,7 @@ class FrameworkParser (object):
             fp.write("   return 0;\n")
             fp.write("}\n")
 
-        p = subprocess.Popen(['clang', 
+        p = subprocess.Popen([CPP, 
             '-o', fname[:-2], 
             '-arch', self.arch,
             '-isysroot', self.sdk,
@@ -564,7 +571,7 @@ class FrameworkParser (object):
 
     def parse_defines(self, fname):
         p = subprocess.Popen(
-            ['clang', '-arch', self.arch, '-isysroot', self.sdk, '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings', '-E', '-Wp,-dD', fname],
+            [CPP, '-arch', self.arch, '-isysroot', self.sdk, '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings', '-E', '-Wp,-dD', fname],
             stdout=subprocess.PIPE)
         data = p.communicate()[0]
         xit = p.wait()

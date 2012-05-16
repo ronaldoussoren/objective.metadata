@@ -591,7 +591,7 @@ def extract_enums(exceptions, headerinfo):
             if name in excinfo:
                 if excinfo[name].get('ignore', False): continue
                 if excinfo[name].get('value'):
-                    values[name] = {'value': excinfo[name]['value'] }
+                    result[name] = [{'value': excinfo[name]['value'], 'arch': None }]
                     continue
 
                 if excinfo[name].get('type') == 'unicode':
