@@ -120,7 +120,6 @@ def merge_defs(defs, key):
             try:
                 uniq.append((d[key], set([d['arch']])))
             except:
-                print defs
                 raise
 
     if len(uniq) == 1:
@@ -271,7 +270,12 @@ def calc_func_proto(exc, info, arch):
 
     metadata['arguments'] = {}
 
-    for idx, a in enumerate(info['args']):
+
+    arg_info = info['args']
+    if isinstance(arg_info, dict):
+        arg_info = [ arg_info[i] for i in range(len(arg_info)) ]
+
+    for idx, a in enumerate(arg_info):
 
         # C has 'aFunction(void)' as the function prototype for functions
         # without arguments.
@@ -312,9 +316,6 @@ def calc_func_proto(exc, info, arch):
             arg['callable'] = dict(arg['function'])
             del arg['function']
 
-            if 'args' not in arg['callable']:
-                print arg
-                print info
             if isinstance(arg['callable']['args'], (list, tuple)):
                 d = {}
                 for k, v in enumerate(arg['callable']['args']):
@@ -575,8 +576,12 @@ def extract_externs(exceptions, headerinfo):
         if name not in result and 'typestr' in excinfo[name]:
             result[name] = [{'typestr':excinfo[name]['typestr'], 'arch': None }]
 
+
     for name in result:
         result[name] = merge_defs(result[name], 'typestr')
+        if name in excinfo:
+            if excinfo[name].get('magic_cookie', False):
+                result[name]['magic_cookie'] = True
 
 
     return result
@@ -931,10 +936,12 @@ def extract_structs(exceptions, headerinfo):
                 continue
 
             alias = None
+            pack = None
             fieldnames = value['fieldnames']
             if name in excinfo:
-                fieldnames = [str(x) for x in excinfo[name].get('fieldnames', fieldnames)]
+                fieldnames = [(x) for x in excinfo[name].get('fieldnames', fieldnames)]
                 alias = excinfo[name].get('alias', None)
+                pack = excinfo[name].get('pack', None)
 
             if name not in structs:
                 structs[name] = []
@@ -943,6 +950,7 @@ def extract_structs(exceptions, headerinfo):
                 'typestr': value['typestr'],
                 'fieldnames': fieldnames,
                 'alias': alias,
+                'pack': pack,
                 'arch': info['arch'],
             })
 
@@ -951,8 +959,14 @@ def extract_structs(exceptions, headerinfo):
         fieldnames = values[0]['fieldnames']
         typestr = merge_defs(values, 'typestr')['typestr']
         alias   = values[0]['alias']
+        pack   = values[0]['pack']
+        if fieldnames and isinstance(fieldnames[0], (list, tuple)):
+            fieldnames = sel32or64(*fieldnames)
         if alias is None:
-            result[name] = createStructType(name, typestr, fieldnames)
+            if pack is None:
+                result[name] = createStructType(name, typestr, fieldnames)
+            else:
+                result[name] = createStructType(name, typestr, fieldnames, None, pack)
         else:
             result[name] = registerStructAlias(typestr, getName(alias))
 
@@ -967,15 +981,18 @@ def emit_structs(fp, structs):
 def emit_externs(fp, externs):
     result = []
     special = {}
+
     for k, v in sorted(externs.items()):
         if isinstance(v, dict):
+            magic =  v.get('magic_cookie', False)
+
             if v['typestr'] == '@':
                 result.append(k)
 
             elif isinstance(v['typestr'], _wrapped_call):
                 special[k] = v['typestr']
             else:
-                result.append('%s@%s'%(k, v['typestr']))
+                result.append('%s@%s%s'%(k, "=" if magic else "", v['typestr']))
 
         else:
             raise ValueError("manual mapping needed")
