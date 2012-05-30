@@ -424,11 +424,8 @@ def extract_opaque_cftypes(exceptions, headerinfo):
     result = {}
     createPointer = func_call("objc.createOpaquePointerType")
     for name, values in sorted(cftypes.items()):
-        if 'typestr' not in value:
-            print "WARNING: Skip %r, no typestr found"%(name,)
-            continue
-
-        result[name] = createPointer(name, value['typestr'])
+        typestr = merge_defs(values, 'typestr')['typestr']
+        result[name] = createPointer(name, typestr)
 
     return result
 
