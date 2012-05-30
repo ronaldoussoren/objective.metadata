@@ -950,9 +950,12 @@ def extract_structs(exceptions, headerinfo):
         alias   = values[0]['alias']
         pack   = values[0]['pack']
         if fieldnames and isinstance(fieldnames[0], (list, tuple)):
-            fieldnames = sel32or64(*map(str, fieldnames))
+            print name, fieldnames
+            fieldnames = sel32or64(
+                    *[map(str, names) for names in fieldnames])
         else:
             fieldnames = map(str, fieldnames)
+
 
         if alias is None:
             if pack is None:
