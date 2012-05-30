@@ -22,7 +22,7 @@ HEADER=textwrap.dedent("""\
 
     import objc, sys
 
-    if sys.maxint > 2 ** 32:
+    if sys.maxsize > 2 ** 32:
         def sel32or64(a, b): return b
     else:
         def sel32or64(a, b): return a
@@ -159,8 +159,10 @@ def merge_definition_lists(defs):
 
     result = []
     for selector, typestr in all_methods.items():
+        for v in typestr:
+            v['typestr'] = bstr(v['typestr'])
         typestr = merge_defs(typestr, 'typestr')['typestr']
-        result.append(func_call('objc.selector')(None, selector, typestr, isRequired=False))
+        result.append(func_call('objc.selector')(None, bstr(selector), typestr, isRequired=False))
 
     return result
 
@@ -192,7 +194,7 @@ def extract_informal_protocols(exceptions, headerinfo):
         typestr += '@:'
         for a in meth['args']:
             typestr += a['typestr']
-        return selector(None, meth['selector'], bstr(typestr), isRequired=False)
+        return selector(None, bstr(meth['selector']), bstr(typestr), isRequired=False)
 
     for name in found:
         if len(found[name]) == 1:
@@ -205,6 +207,40 @@ def extract_informal_protocols(exceptions, headerinfo):
             result[name] = informal_protocol(name, merge_definition_lists(found[name]))
 
     return result
+
+def _cleanup_callable_metadata(metadata):
+    def cleanup_type(rec):
+        if 'typestr' in rec:
+            rec['type'] = rec['typestr']
+            del rec['typestr']
+        elif 'type_override' in val:
+            rec['type'] = rec['type_override']
+            del rec['type_override']
+
+        if isinstance(rec['type'], (list, tuple)):
+            if isinstance(rec['type'][1], bool):
+                # Correct scanner stores 'typestr_special' in wrong location
+                rec['type'] = rec['type'][0]
+            
+        if isinstance(rec['type'], (list, tuple)):
+            rec['type'] = sel32or64(*map(bstr, rec['type']))
+        else:
+            rec['type'] = bstr(rec['type'])
+        return rec
+   
+    metadata['retval'] = cleanup_type(dict(metadata['retval']))
+
+    d = {}
+    if isinstance(metadata['args'], dict):
+        metadata['args'] = [ metadata['args'][x] for x in range(len(metadata['args'])) ]
+    for k, val in enumerate(metadata['args']):
+        d[k] = cleanup_type(dict(val))
+
+    metadata['arguments'] = d
+    del metadata['args']
+
+    return metadata
+
 
 def calc_func_proto(exc, info, arch):
     types = []
@@ -245,28 +281,8 @@ def calc_func_proto(exc, info, arch):
         metadata['retval'] = retval
 
     if 'function' in retval:
-        retval['callable'] = dict(retval['function'])
+        retval['callable'] = _cleanup_callable_metadata(dict(retval['function']))
         del retval['function']
-        d = {}
-        for k, val in enumerate(retval['callable']['args']):
-            val = dict(val)
-            if 'typestr' in val:
-                val['type'] = val['typestr']
-                del val['typestr']
-            d[k] = val
-        retval['callable']['arguments'] = d
-        del retval['callable']['args']
-
-        if 'retval' in retval['callable']:
-            val = dict(retval['callable']['retval'])
-            if 'typestr' in val:
-                if isinstance(val['typestr'], (list, tuple)):
-                    val['type'] = sel32or64(*[bstr(x) for x in val['typestr']])
-                else:
-                    val['type'] = bstr(val['typestr'])
-                del val['typestr']
-            retval['callable']['retval'] = val
-        retval['callable']['args'] = d
 
     metadata['arguments'] = {}
 
@@ -313,37 +329,8 @@ def calc_func_proto(exc, info, arch):
 
         if 'function' in arg:
             # XXX: This is suboptimal at best
-            arg['callable'] = dict(arg['function'])
+            arg['callable'] = _cleanup_callable_metadata(dict(arg['function']))
             del arg['function']
-
-            if isinstance(arg['callable']['args'], (list, tuple)):
-                d = {}
-                for k, v in enumerate(arg['callable']['args']):
-                    v = dict(v)
-                    if 'typestr' in v:
-                        if isinstance(v['typestr'], (list, tuple)):
-                            v['type'] = sel32or64(*[bstr(x) for x in v['typestr']])
-                        else:
-                            v['type'] = bstr(v['typestr'])
-                        del v['typestr']
-                    d[k] = v
-                arg['callable']['args'] = d
-
-            if 'retval' in arg['callable']:
-                v = dict(arg['callable']['retval'])
-                if 'typestr' in v:
-                    v['type'] = v['typestr']
-                    del v['typestr']
-                arg['callable']['retval'] = v
-
-
-
-
-            try:
-                arg['callable']['arguments'] = arg['callable']['args']
-                del arg['callable']['args']
-            except KeyError:
-                pass
 
         for k in arg:
             if isinstance(arg[k], list):
@@ -401,7 +388,7 @@ def extract_opaque(exceptions, headerinfo):
             print "WARNING: Skip %r, no typestr found"%(name,)
             continue
 
-        opaque[name] = createPointer(name, info['typestr'])
+        opaque[name] = createPointer(name, bstr(info['typestr']))
 
     return opaque
 
@@ -596,7 +583,10 @@ def extract_enums(exceptions, headerinfo):
             if name in excinfo:
                 if excinfo[name].get('ignore', False): continue
                 if excinfo[name].get('value'):
-                    result[name] = [{'value': excinfo[name]['value'], 'arch': None }]
+                    if isinstance(excinfo[name]['value'], (str, unicode)):
+                        result[name] = [{'value': bstr(excinfo[name]['value']), 'arch': None }]
+                    else:
+                        result[name] = [{'value': excinfo[name]['value'], 'arch': None }]
                     continue
 
                 if excinfo[name].get('type') == 'unicode':
@@ -957,11 +947,16 @@ def extract_structs(exceptions, headerinfo):
     result = {}
     for name, values in structs.items():
         fieldnames = values[0]['fieldnames']
+        for v in values:
+            v['typestr'] = bstr(v['typestr'])
         typestr = merge_defs(values, 'typestr')['typestr']
         alias   = values[0]['alias']
         pack   = values[0]['pack']
         if fieldnames and isinstance(fieldnames[0], (list, tuple)):
-            fieldnames = sel32or64(*fieldnames)
+            fieldnames = sel32or64(*map(str, fieldnames))
+        else:
+            fieldnames = map(str, fieldnames)
+
         if alias is None:
             if pack is None:
                 result[name] = createStructType(name, typestr, fieldnames)
@@ -1038,7 +1033,7 @@ def emit_method_info(fp, method_info):
         fp.write('try:\n')
 
         for record in sorted(method_info, key=operator.itemgetter('class', 'selector')):
-            fp.write("    r(%r, %r, %r)\n"%(record['class'], bstr(record['selector']), record['metadata']))
+            fp.write("    r(%r, %r, %r)\n"%(bstr(record['class']), bstr(record['selector']), record['metadata']))
 
         fp.write('finally:\n')
         fp.write('    objc._updatingMetadata(False)\n')
