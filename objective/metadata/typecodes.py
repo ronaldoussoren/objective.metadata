@@ -348,7 +348,9 @@ class TypeCodes (object):
         # treated specially by PyObjC
         self.add_predefined('BOOL',      objc._C_NSBOOL, True)
         self.add_predefined('Boolean',   objc._C_NSBOOL, True)
-        self.add_predefined('boolean_t', objc._C_NSBOOL, True)
+
+        # XXX: 'boolean_t' has size 4 on intel, not the same size as either BOOL or bool.
+        #self.add_predefined('boolean_t', objc._C_NSBOOL, True)
         self.add_predefined('int8_t',    objc._C_CHAR_AS_INT, True)
         self.add_predefined('UniChar',   objc._C_UNICHAR, True)
 

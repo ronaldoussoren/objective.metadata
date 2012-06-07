@@ -52,6 +52,14 @@ class ustr(object):
         value = self._value.encode('utf-8')
         return 'b%r.decode("utf-8")'%(value,)
 
+    def __cmp__(self, other):
+        if not isinstance(other, ustr):
+            raise TypeError
+
+        return cmp(self._value, other._value)
+
+    def __hash__(self, other):
+        return hash(self._value)
 
 
 
@@ -68,6 +76,17 @@ class _wrapped_call (object):
 
         if args:
             return '%s(%s)'%(self.name, ", ".join(args))
+
+    def cmp(self, other):
+        if not isinstance(other, _wrapped_call):
+            raise TypeError
+
+        return cmp((self.name, self.args, self.kwds), (other.name, other.args, other.kwds))
+
+    def hash(self):
+        return hash((self.name, self.args, self.kwds))
+
+
 
 class func_call (object):
     def __init__(self, func_name):
@@ -284,6 +303,9 @@ def calc_func_proto(exc, info, arch):
         retval['callable'] = _cleanup_callable_metadata(dict(retval['function']))
         del retval['function']
 
+    if 'block' in retval:
+        retval['block'] = _cleanup_callable_metadata(dict(retval['block']))
+
     metadata['arguments'] = {}
 
 
@@ -327,10 +349,18 @@ def calc_func_proto(exc, info, arch):
                 v = bstr(v)
             arg['sel_of_type'] = v
 
+        if 'block' in arg:
+            arg['block'] = _cleanup_callable_metadata(dict(arg['block']))
+
+        if 'callable' in arg:
+            arg['callable'] = _cleanup_callable_metadata(dict(arg['callable']))
+
         if 'function' in arg:
             # XXX: This is suboptimal at best
             arg['callable'] = _cleanup_callable_metadata(dict(arg['function']))
             del arg['function']
+            print arg['callable']
+
 
         for k in arg:
             if isinstance(arg[k], list):
@@ -425,7 +455,7 @@ def extract_opaque_cftypes(exceptions, headerinfo):
     createPointer = func_call("objc.createOpaquePointerType")
     for name, values in sorted(cftypes.items()):
         typestr = merge_defs(values, 'typestr')['typestr']
-        result[name] = createPointer(name, typestr)
+        result[name] = createPointer(name, bstr(typestr))
 
     return result
 
@@ -649,7 +679,7 @@ def calc_type(choices):
 
     else:
         if isinstance(choices, list):
-            return sel32or64(*choices)
+            return sel32or64(*[bstr(ch) for ch in choices])
 
         else:
             ch = []
@@ -950,7 +980,6 @@ def extract_structs(exceptions, headerinfo):
         alias   = values[0]['alias']
         pack   = values[0]['pack']
         if fieldnames and isinstance(fieldnames[0], (list, tuple)):
-            print name, fieldnames
             fieldnames = sel32or64(
                     *[map(str, names) for names in fieldnames])
         else:
@@ -1062,6 +1091,27 @@ def extract_literal(exceptions, headerinfo):
         for name, value in info['definitions'].get('literals', {}).items():
             if name in excinfo and excinfo[name].get('ignore', False):
                 continue
+
+            is_unicode = False
+            if name in excinfo and excinfo[name].get('unicode', False):
+                is_unicode = True
+
+            if isinstance(value, dict):
+                if value.get('unicode', False):
+                    is_unicode = True
+
+                if isinstance(value['value'], (str, unicode)):
+                    if is_unicode:
+                        value = ustr(value['value'])
+                    else:
+                        value = bstr(value['value'])
+
+            else:
+                if isinstance(value, (str, unicode)):
+                    if is_unicode:
+                        value = ustr(value)
+                    else:
+                        value = bstr(value)
 
             if name not in found:
                 found[name] = []

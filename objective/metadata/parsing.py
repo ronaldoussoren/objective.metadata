@@ -632,12 +632,18 @@ class FrameworkParser (object):
 
                 m = STR_RE.match(value)
                 if m is not None:
-                    self.literals[key] = m.group(1)
+                    self.literals[key] = {
+                        'unicode': False,
+                        'value': m.group(1)
+                    }
                     continue
 
                 m = UNICODE_RE.match(value)
                 if m is not None:
-                    self.literals[key] = unicode(m.group(1))
+                    self.literals[key] = {
+                        'unicode': True,
+                        'value': unicode(m.group(1))
+                    }
                     continue
 
                 m = UNICODE2_RE.match(value)
