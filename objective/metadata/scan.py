@@ -109,7 +109,7 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
         file_archs = macho_archs(path)
         if arch not in file_archs:
             print >>sys.stderr, "Framework %r not available for arch %r"%(
-                    framework, options.arch)
+                    framework, arch)
             sys.exit(1)
 
         path = framework_path = os.path.dirname(path)

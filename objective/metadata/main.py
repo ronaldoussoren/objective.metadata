@@ -108,22 +108,10 @@ def parse_ini(ini_file, ini_sections):
                 info["typemap"][orig] = new
         yield info
 
-_sdk_root = None
-def sdk_root():
-    global _sdk_root
-    if _sdk_root is None:
-        out = subprocess.check_output(['xcode-select', '-print-path']).strip()
-        if not out:
-            if os.path.exists('/Applications/Xcode.app'):
-                _sdk_root = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/'
-        else:
-            _sdk_root = os.path.join(
-                out, 'SDKs')
-
-    return _sdk_root
-
 def path_for_sdk_version(version):
-    return os.path.join(sdk_root(), 'MacOSX%s.sdk'%(version,))
+    out =subprocess.check_output([
+        "xcodebuild", "-version", "-sdk", "macosx%s"%(version,), "Path"])
+    return out.strip()
 
 def main():
     args = parser.parse_args()
