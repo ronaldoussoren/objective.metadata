@@ -13,6 +13,7 @@ import subprocess
 from . import compile
 from . import merge_xml
 from . import scan
+from . import protocols
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
 parser.add_argument("--verbose", action="store_true", help="print progress information", default=False)
@@ -31,6 +32,7 @@ import_command = subparsers.add_parser("import", help="Import data from a bridge
 import_command.add_argument("--bridgesupport-file", metavar="FILE", help="Use this bridgesupport file")
 
 compile_command = subparsers.add_parser("compile", help="Compile data into the PyObjC data file")
+protocols_command = subparsers.add_parser("protocols", help="Compile data into the protocols C file")
 
 
 def make_pairs(sequence):
@@ -93,6 +95,11 @@ def parse_ini(ini_file, ini_sections):
             info["compiled"] = os.path.join(ini_dir, cfg.get(section, "compiled"))
         else:
             info["compiled"] = os.path.join(ini_dir, "..", "Lib", info["python-package"].replace('.', os.path.sep), "_metadata.py")
+
+        if cfg.has_option(section, "protocols-file"):
+            info["protocols-file"] = os.path.join(ini_dir, cfg.get(section, "protocols-file"))
+        else:
+            info["protocols-file"] = os.path.join(ini_dir, "..", "Modules", "_" + info["framework"] + "_protocols.m")
 
         if cfg.has_option(section, "only-headers"):
             info["only-headers"] = [x.strip() for x in cfg.get(section, "only-headers").split(",")]
@@ -173,6 +180,14 @@ def main():
                     info["exceptions"], 
                     glob.glob(info["raw"] + "/*"), 
             )
+
+        elif args.command == "protocols":
+            protocols.compile_protocol_file(
+                info["protocols-file"],
+                info["exceptions"],
+                glob.glob(info["raw"] + "/*"),
+            )
+
 
         else:
             print "Internal error: Unimplemented command: %s"%(args.command,)
