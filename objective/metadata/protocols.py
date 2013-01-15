@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import sys, glob, textwrap, time, itertools, collections, operator
 from .storage import load_framework_info
 import re
+import os
 import collections
 
 from .compile import _is32Bit, _is64Bit, _isLittleEndian, _isBigEndian
@@ -55,6 +56,10 @@ def classify_versions(versions):
     if min_version == '10.6':
         return None
 
+    return 'defined(MAC_OS_X_VERSION_%s)'%(
+            min_version.replace('.', '_'),
+            )
+
     return '(MAC_OS_X_VERSION_MIN_REQUIRED <= MAC_OS_X_VERSION_%s) && defined(MAC_OS_X_VERSION_%s)'%(
             min_version.replace('.', '_'),
             min_version.replace('.', '_'),
@@ -91,6 +96,10 @@ def compile_protocol_file(output_fn, exceptions_fn, headerinfo_fns):
     """
     exceptions = load_framework_info(exceptions_fn)
     headerinfo = [load_framework_info(fn) for fn in headerinfo_fns]
+
+    if not os.path.exists(os.path.dirname(output_fn)):
+        os.makedirs(os.path.dirname(output_fn))
+
     with open(output_fn, 'w') as fp:
         fp.write(HEADER % dict(
             timestamp=time.ctime(),
@@ -114,7 +123,7 @@ def compile_protocol_file(output_fn, exceptions_fn, headerinfo_fns):
         for selector in sorted(grouped_names):
             if selector is not None: fp.write('#if %s\n'%(selector,))
             for nm in sorted(grouped_names[selector]):
-                fp.write("    p = PyObjC_ObjCToPython(\"@\", @protocol(%s)); Py_XDECREF(p);\n"%(nm,))
+                fp.write("    p = PyObjC_IdToPython(@protocol(%s)); Py_XDECREF(p);\n"%(nm,))
             if selector is not None: fp.write('#endif /* %s */\n'%(selector,))
 
         fp.write(FOOTER)
