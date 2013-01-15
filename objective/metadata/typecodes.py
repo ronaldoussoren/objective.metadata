@@ -179,7 +179,16 @@ class TypeCodes (object):
             return self.__typestr_for_node(node.type, name)
 
         if isinstance(node, c_ast.Enum):
-            return objc._C_INT, special
+            if node.type is None:
+                return objc._C_INT, special
+
+
+            if isinstance(node.type, str):
+                key = node.type
+            else:
+                key = ' '.join(node.type)
+            result =  self._definitions[key], key in self._special
+            return result
 
         if isinstance(node, c_ast.Struct):
             result = [ objc._C_STRUCT_B ]

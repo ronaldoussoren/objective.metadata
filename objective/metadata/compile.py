@@ -54,7 +54,7 @@ class ustr(object):
 
     def __cmp__(self, other):
         if not isinstance(other, ustr):
-            raise TypeError
+            raise TypeError((self, other))
 
         return cmp(self._value, other._value)
 
@@ -250,13 +250,14 @@ def _cleanup_callable_metadata(metadata):
     metadata['retval'] = cleanup_type(dict(metadata['retval']))
 
     d = {}
-    if isinstance(metadata['args'], dict):
-        metadata['args'] = [ metadata['args'][x] for x in range(len(metadata['args'])) ]
-    for k, val in enumerate(metadata['args']):
-        d[k] = cleanup_type(dict(val))
+    if 'args' in metadata:
+        if isinstance(metadata['args'], dict):
+            metadata['args'] = [ metadata['args'][x] for x in range(len(metadata['args'])) ]
+        for k, val in enumerate(metadata['args']):
+            d[k] = cleanup_type(dict(val))
 
-    metadata['arguments'] = d
-    del metadata['args']
+        metadata['arguments'] = d
+        del metadata['args']
 
     return metadata
 
@@ -384,6 +385,7 @@ def extract_functions(exceptions, headerinfo):
                 if excinfo[name].get('ignore', False): continue
 
 
+            print name
             typestr, metadata = calc_func_proto(excinfo.get(name, {}), value, info['arch'])
             value = { 'typestr': typestr, 'metadata': metadata, 'arch': info['arch'] }
 
@@ -400,8 +402,12 @@ def extract_functions(exceptions, headerinfo):
             functions[name] = [value]
 
     result = {}
-    for name, value in functions.items():
-        info = merge_defs(value, 'typestr')
+    for idx, (name, value) in enumerate(sorted(functions.items())):
+        try:
+            info = merge_defs(value, 'typestr')
+        except:
+            print "[%d/%d] %s"%(idx+1, len(functions), name)
+            raise
         if value[0]['metadata']:
             result[name] = (info['typestr'], '', value[0]['metadata'])
         else:
@@ -480,6 +486,7 @@ def extract_aliases(exceptions, headerinfo):
 
     result = {}
     for name, values in sorted(aliases.items()):
+        print name
         alias = merge_defs(values, 'alias')['alias']
 
         result[name] = alias
@@ -585,6 +592,7 @@ def extract_externs(exceptions, headerinfo):
 
     # Finally add definitions that were manually added to  the exceptions file
     for name in excinfo:
+        if excinfo[name].get('ignore', False): continue
         if name not in result and 'type_override' in excinfo[name]:
             result[name] = [{'typestr':excinfo[name]['type_override'], 'arch': None }]
         if name not in result and 'typestr' in excinfo[name]:
@@ -639,6 +647,7 @@ def extract_enums(exceptions, headerinfo):
         try:
             result[name] = merge_defs(result[name], 'value')
         except MergeNeededException:
+            print name
 
             if name.endswith('Count'):
                 # A number of headers define a kFooCount value that is
@@ -822,10 +831,14 @@ def merge_method_info(clsname, selector, class_method, infolist, exception, only
                 callable = a['callable']
                 for value in itertools.chain([callable.get('retval',{})], callable.get('arguments', {}).values()):
                     if 'type' not in value:
-                        raise ValueError("%s %s"%(
+                        raise ValueError("Missing 'type' in argument/retval spec for %s %s"%(
                             infolist[0]['class'], infolist[0]['selector']))
                     if isinstance(value['type'], str):
                         value['type'] = bstr(value['type'])
+
+                    elif isinstance(value['type'], _wrapped_call):
+                        pass
+
                     else:
                         value['type'] = sel32or64(bstr(value['type'][0]), bstr(value['type'][1]))
 
@@ -921,6 +934,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
         else:
             use_key = key
 
+        print key[0], key[1], key[2]
         result[key] = merge_method_info(key[0], key[1], key[2], result[key], 
                 exception_method(excinfo, use_key), section == 'classes')
 
@@ -976,6 +990,7 @@ def extract_structs(exceptions, headerinfo):
         fieldnames = values[0]['fieldnames']
         for v in values:
             v['typestr'] = bstr(v['typestr'])
+        print name
         typestr = merge_defs(values, 'typestr')['typestr']
         alias   = values[0]['alias']
         pack   = values[0]['pack']
