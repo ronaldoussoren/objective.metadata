@@ -1,5 +1,5 @@
 """
-Utility module for parsing the header files in a framework and extracting 
+Utility module for parsing the header files in a framework and extracting
 interesting definitions.
 """
 import operator
@@ -40,8 +40,8 @@ if int(os.uname()[2].split('.')[0]) <= 9:
 
 
 class FilteredVisitor (c_ast.NodeVisitor):
-    """ 
-    A node visitor that will only call the visit_* 
+    """
+    A node visitor that will only call the visit_*
     methods for nodes that should be selected according
     to a framework parser
     """
@@ -72,7 +72,7 @@ class DefinitionVisitor (FilteredVisitor):
 
         # Record all records seen in header files, even
         # if they are not in a framework we're scanning.
-        # This way we can emit the expected metadata 
+        # This way we can emit the expected metadata
         # for "typedef CGRect NSRect" (as used in the Foundation
         # headers on x86_64)
         self.__all_structs = {}
@@ -144,7 +144,7 @@ class DefinitionVisitor (FilteredVisitor):
         if node.name == 'NSObject' and node.categorie_name: #XXX
             self._parser.add_informal_protocol(node)
 
-        elif 'Delegat' in node.categorie_name:
+        elif node.categorie_name is not None and 'Delegat' in node.categorie_name:
             self._parser.add_informal_protocol(node)
 
         self._parser.add_category(node)
@@ -155,8 +155,8 @@ class DefinitionVisitor (FilteredVisitor):
 
 class FrameworkParser (object):
     """
-    Parser for framework headers. 
-    
+    Parser for framework headers.
+
     This class uses objective.cparser to to the actual work and stores
     all interesting information found in the headers.
     """
@@ -178,7 +178,7 @@ class FrameworkParser (object):
         self.arch = arch
         self.sdk = sdk
         self.typemap = typemap
-        
+
         self.headers = set()
 
         self.enum_values= {}
@@ -227,20 +227,20 @@ class FrameworkParser (object):
     def parse(self):
 
         # - Generate a temporary file that #imports the framework
-        #   We need to create the file because we need to use the 
+        #   We need to create the file because we need to use the
         #   preprocessor
         fname = '_prs_%s.m'%(self.framework,)
         with open(fname, 'w') as fp:
             self._gen_includes(fp)
 
-        # - Parse the file. 
+        # - Parse the file.
         #   The -D and -U options are needed to strip out bits of code
         #   that are not yet supported by objective.cparser
         try:
-            ast = parse_file(fname, 
+            ast = parse_file(fname,
                 use_cpp=True, cpp_args=[
                     '-arch', self.arch, '-isysroot', self.sdk,
-                    '-E', '-arch', self.arch, '-D__attribute__(x)=',
+                    '-E', '-arch', self.arch, '-D__attribute__(x...)=',
                     '-D__asm__(...)=',
                     '-D__volatile__(...)=',
                     '-D__extension__=',
@@ -254,7 +254,7 @@ class FrameworkParser (object):
 
         self.typecodes = TypeCodes(self.arch, self.typemap)
         self.typecodes.fill_from_ast(ast)
-        
+
         # - And finally walk the AST to find useful definitions
         visitor = DefinitionVisitor(self)
         visitor.visit(ast)
@@ -420,17 +420,20 @@ class FrameworkParser (object):
         }
 
     def _select_node(self, node):
-        """ 
-        Return True iff ``node`` is an AST node that's loaded from a 
+        """
+        Return True iff ``node`` is an AST node that's loaded from a
         header for the current framework.
         """
         if not isinstance(node, c_ast.Node):
+            print "not ast", node
             return False
 
         if node.coord is None:
+            print "no coord", node
             return False
 
         if node.coord.file is None:
+            print "no file", node
             return False
 
         if self.framework_path in node.coord.file:
@@ -439,11 +442,14 @@ class FrameworkParser (object):
 
             if self.only_headers:
                 if os.path.basename(p) not in self.only_headers:
+                    print "not header", node
                     return False
-             
+
             self.headers.add(p)
+            print "use", node
             return True
 
+        print "not framework",node
         return False
 
     def _calculate_enum_value(self, name, unsigned=False):
@@ -460,8 +466,8 @@ class FrameworkParser (object):
             fp.write("   return 0;\n")
             fp.write("}\n")
 
-        p = subprocess.Popen([CPP, 
-            '-o', fname[:-2], 
+        p = subprocess.Popen([CPP,
+            '-o', fname[:-2],
             '-arch', self.arch,
             '-isysroot', self.sdk,
             '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings',
@@ -750,12 +756,12 @@ class FrameworkParser (object):
                 else:
                     self.func_macros[proto.split('(')[0]] = funcdef
 
-    
+
     def add_function(self, name, type, funcspec):
         if name.startswith('__'):
             return
 
-        self.functions[name] = func = { 
+        self.functions[name] = func = {
             'retval': {'typestr': None },
             'args': [],
         }

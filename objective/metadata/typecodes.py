@@ -132,7 +132,7 @@ class TypeCodes (object):
             if typestr is None:
                 return
 
-            self._definitions[name] = typestr 
+            self._definitions[name] = typestr
             if special:
                 self._special.add(name)
 
@@ -260,7 +260,7 @@ class TypeCodes (object):
             result.append(t)
             if s:
                 special = True
-            
+
             result.append(objc._C_ARY_E)
             return ''.join(result), special
 
@@ -282,7 +282,7 @@ class TypeCodes (object):
             else:
                 key = ' '.join(node.names)
             return self._definitions[key], key in self._special
-        
+
         if isinstance(node, c_ast.BlockPtrDecl):
             return objc._C_ID + objc._C_UNDEF, special
 
@@ -291,7 +291,7 @@ class TypeCodes (object):
 
         raise ValueError(node)
         # XXX
-        
+
 
     def __add_predefined(self, arch):
         self.add_predefined('Class', objc._C_CLASS)
@@ -323,6 +323,8 @@ class TypeCodes (object):
             self.add_predefined('unsigned long', objc._C_ULNG_LNG)
             self.add_predefined('long signed', objc._C_LNG_LNG)
             self.add_predefined('long unsigned', objc._C_ULNG_LNG)
+            self.add_predefined('long signed int', objc._C_LNG_LNG)
+            self.add_predefined('long unsigned int', objc._C_ULNG_LNG)
 
         else:
             self.add_predefined('long', objc._C_LNG)
@@ -334,6 +336,8 @@ class TypeCodes (object):
             self.add_predefined('unsigned long', objc._C_ULNG)
             self.add_predefined('long signed', objc._C_LNG)
             self.add_predefined('long unsigned', objc._C_ULNG)
+            self.add_predefined('long signed int', objc._C_LNG)
+            self.add_predefined('long unsigned int', objc._C_ULNG)
 
         self.add_predefined('long long', objc._C_LNG_LNG)
         self.add_predefined('int long long', objc._C_LNG_LNG)
@@ -343,6 +347,8 @@ class TypeCodes (object):
         self.add_predefined('int unsigned long long', objc._C_ULNG_LNG)
         self.add_predefined('long long signed', objc._C_LNG_LNG)
         self.add_predefined('long long unsigned', objc._C_ULNG_LNG)
+        self.add_predefined('long long signed int', objc._C_LNG_LNG)
+        self.add_predefined('long long unsigned int', objc._C_ULNG_LNG)
         self.add_predefined('bool', objc._C_BOOL)
         self.add_predefined('float', objc._C_FLT)
         self.add_predefined('double', objc._C_DBL)
