@@ -2,173 +2,35 @@
 Utility module for parsing the header files in a framework and extracting
 interesting definitions.
 """
-import operator
 import os
-import subprocess
 import platform
 import re
 import sys
-
 import objc
 
-
-from typecodes import TypeCodes
-from ast_tools import parse_int, constant_fold
-
-from objective.cparser import parse_file, c_ast
-
-LINE_RE=re.compile(r'^# \d+ "([^"]*)" ')
-DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
-INT_RE=re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
-FLOAT_RE=re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$')
-STR_RE=re.compile('^"(.*)"$')
-UNICODE_RE=re.compile('^@"(.*)"$')
-UNICODE2_RE=re.compile('^CFSTR\("(.*)"\)$')
-ALIAS_RE=re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
-NULL_VALUE=re.compile(r'\(\([A-Za-z0-9]+\)NULL\)')
-CALL_VALUE=re.compile(r'^[A-Za-z0-9]+\([A-Za-z0-9]*\)$')
-
-FUNC_DEFINE_RE=re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
-ERR_SUB_DEFINE_RE=re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
-ERR_SYSTEM_DEFINE_RE=re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
-SC_SCHEMA_RE=re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
-OR_EXPR_RE=re.compile(r"\([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*\)")
-
-CPP='clang'
-if int(os.uname()[2].split('.')[0]) <= 9:
-    CPP='gcc'
+from clang.cindex import Index, Cursor, CursorKind, Type, TypeKind, TranslationUnit, TranslationUnitLoadError
+from objective.metadata.clanghelpers import ObjcDeclQualifier, AbstractClangVisitor, LinkageKind
 
 
-class FilteredVisitor (c_ast.NodeVisitor):
-    """
-    A node visitor that will only call the visit_*
-    methods for nodes that should be selected according
-    to a framework parser
-    """
-    def __init__(self, parser):
-        self._parser = parser
-
-    def visit(self, node):
-        if not self._parser._select_node(node):
-            self.generic_visit(node)
-            return
-
-        #if node.coord is not None and 'ABAddressBook.h' in node.coord.file:
-        #    print node, node.coord.file
-        #    try:
-        #        node.show(showcoord=True, attrnames=True)
-        #    except AttributeError:
-        #        pass
-
-        super(FilteredVisitor, self).visit(node)
-
-class DefinitionVisitor (FilteredVisitor):
-    """
-    A NodeVisitor that calls back to the framework parser when it
-    locates interesting definitions.
-    """
-    def __init__(self, parser):
-        super(DefinitionVisitor, self).__init__(parser)
-
-        # Record all records seen in header files, even
-        # if they are not in a framework we're scanning.
-        # This way we can emit the expected metadata
-        # for "typedef CGRect NSRect" (as used in the Foundation
-        # headers on x86_64)
-        self.__all_structs = {}
-
-    def visit(self, node):
-        super(DefinitionVisitor, self).visit(node)
-
-        if isinstance(node, c_ast.Typedef):
-            if isinstance(node.type.type, c_ast.Struct):
-                self.__all_structs[node.name] = node.type.type
-
-    def visit_Protocol(self, node):
-        self.generic_visit(node)
-
-        self._parser.add_protocol(node)
-
-    def visit_EnumeratorList(self, node):
-        self.generic_visit(node)
-        self._parser.append_enumerator_list(node)
-
-    def visit_Typedef(self, node):
-        self.generic_visit(node)
-
-        self._parser.typedefs[node.name] = node.type
-
-        if isinstance(node.type, c_ast.FuncDecl):
-            return
-
-        if not getattr(node.type, "quals", None):
-            if isinstance(node.type, c_ast.TypeDecl):
-                if node.type.declname in self._parser.cftypes:
-                    self._parser.aliases[node.name] = node.type.declname
-
-            if isinstance(node.type.type, c_ast.IdentifierType):
-                if len(node.type.type.names) == 1:
-                    type_name = node.type.type.names[0]
-                    if type_name in self.__all_structs:
-                        self._parser.add_struct(node.name, self.__all_structs[type_name])
-
-            if isinstance(node.type.type, c_ast.Struct):
-                self._parser.add_struct(node.name, node.type.type)
-
-            if isinstance(node.type, c_ast.PtrDecl):
-                if isinstance(node.type.type.type, c_ast.Struct):
-                    stp = node.type.type.type
-                    if stp.name is not None and stp.name.startswith('__'):
-                        if stp.decls is None:
-                            self._parser.add_cftype(node.name, node.type)
-
-    def visit_Decl(self, node):
-        self.generic_visit(node)
-        if node.name is None:
-            return
-
-        if 'extern' in node.storage:
-            if isinstance(node.type, c_ast.PtrDecl):
-                self._parser.add_extern(node.name, node.type)
-
-            elif isinstance(node.type, c_ast.TypeDecl):
-                self._parser.add_extern(node.name, node.type)
-
-        if isinstance(node.type, c_ast.FuncDecl):
-            self._parser.add_function(node.name, node.type, node.funcspec)
-
-
-    def visit_Category(self, node):
-        self.generic_visit(node)
-
-        if node.name == 'NSObject' and node.categorie_name: #XXX
-            self._parser.add_informal_protocol(node)
-
-        elif node.categorie_name is not None and 'Delegat' in node.categorie_name:
-            self._parser.add_informal_protocol(node)
-
-        self._parser.add_category(node)
-
-    def visit_Interface(self, node):
-        self.generic_visit(node)
-        self._parser.add_interface(node)
-
-class FrameworkParser (object):
+class FrameworkParser(object):
     """
     Parser for framework headers.
 
-    This class uses objective.cparser to to the actual work and stores
+    This class uses libclang to do the actual work and stores
     all interesting information found in the headers.
     """
-    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(), link_framework=None, only_headers=None, typemap=None):
+
+    def __init__(self, framework, arch='x86_64', sdk='/', start_header=None, preheaders=(), extraheaders=(),
+                 link_framework=None, only_headers=None, typemap=None, min_deploy=None, verbose=False):
+        self.verbose = verbose
         self.framework = framework
         self.link_framework = link_framework if link_framework is not None else framework
-        self.framework_path = '/%s.framework/'%(framework,)
+        self.framework_path = '/%s.framework/' % (framework,)
+
         if start_header is not None:
             self.start_header = start_header
-
         else:
-            self.start_header = '%s/%s.h'%(framework, framework)
+            self.start_header = '%s/%s.h' % (framework, framework)
 
         self.only_headers = only_headers
 
@@ -178,10 +40,11 @@ class FrameworkParser (object):
         self.arch = arch
         self.sdk = sdk
         self.typemap = typemap
+        self.min_deploy = min_deploy
 
         self.headers = set()
 
-        self.enum_values= {}
+        self.enum_values = {}
         self.structs = {}
         self.externs = {}
         self.literals = {}
@@ -195,69 +58,51 @@ class FrameworkParser (object):
         self.informal_protocols = {}
         self.classes = {}
         self.called_definitions = {}
-        self._func_protos = {}
-        self._init_func_protos()
-
-
-    def _init_func_protos(self):
-        self._func_protos['CFComparatorFunction'] = {
-            # This function typedef has an prototype that would
-            # require manual annotation, tweak the prototype to
-            # be more useful
-            'retval': { 'typestr': objc._C_ULNG },
-            'args': [
-                { 'typestr': objc._C_ID },
-                { 'typestr': objc._C_ID },
-                { 'typestr': objc._C_ID },
-            ]
-        }
-
-
-
-    def _gen_includes(self, fp):
-        for hdr in self.preheaders:
-            fp.write('#import <%s>\n'%(hdr,))
-        fp.write('#import <%s>\n'%(self.start_header,))
-        for hdr in self.additional_headers:
-            fp.write('#import <%s/%s>'%(self.framework, hdr))
-        for hdr in self.extraheaders:
-            fp.write('#import <%s>\n'%(hdr,))
-
+        self.macro_names = set()
 
     def parse(self):
 
-        # - Generate a temporary file that #imports the framework
-        #   We need to create the file because we need to use the
-        #   preprocessor
-        fname = '_prs_%s.m'%(self.framework,)
-        with open(fname, 'w') as fp:
-            self._gen_includes(fp)
+        index = Index.create()
 
-        # - Parse the file.
-        #   The -D and -U options are needed to strip out bits of code
-        #   that are not yet supported by objective.cparser
+        translation_unit = None
+
+        if self.verbose:
+            print("Beginning compilation with libclang...")
+
+        options = TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD | TranslationUnit.PARSE_SKIP_FUNCTION_BODIES
+
+        fake_path = "main.m"
+        code_string = self.__includes_string()
+
+        unsaved_files = [(fake_path, code_string)]
+        args = ['-arch', self.arch, '-isysroot', self.sdk]
+
+        # Handle min OS version deployment setting
+        if self.min_deploy:
+            # Replaces -DMAC_OS_X_VERSION_MIN_REQUIRED=1040 etc
+            args.append("-mmacosx-version-min=" + str(self.min_deploy))
+
+        # Parse
         try:
-            ast = parse_file(fname,
-                use_cpp=True, cpp_args=[
-                    '-arch', self.arch, '-isysroot', self.sdk,
-                    '-E', '-arch', self.arch, '-D__attribute__(x...)=',
-                    '-D__asm__(...)=',
-                    '-D__volatile__(...)=',
-                    '-D__extension__=',
-                    '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040',
-                    '-Wno-#warnings',
-                    '-D__typeof__(x)=long',], cpp_path=CPP)
+            translation_unit = index.parse(fake_path, args, unsaved_files, options=options)
+        except TranslationUnitLoadError:
+            sys.stderr.write("ERROR: libclang compilation failed")
+            exit(1)
 
-            self.parse_defines(fname)
-        finally:
-            os.unlink(fname)
+        # Not sure this is possible, but...
+        if not translation_unit:
+            sys.stderr.write("ERROR: libclang compilation failed")
+            exit(1)
 
-        self.typecodes = TypeCodes(self.arch, self.typemap)
-        self.typecodes.fill_from_ast(ast)
+        if self.verbose:
+            print("libclang compilation complete.")
+            print("Beginning scan...")
 
-        # - And finally walk the AST to find useful definitions
-        visitor = DefinitionVisitor(self)
-        visitor.visit(ast)
+        definitions_visitor = DefinitionVisitor(self)
+        definitions_visitor.visit(translation_unit.cursor)
+
+        if self.verbose:
+            print("Scan complete.")
 
     def definitions(self):
         """
@@ -265,22 +110,22 @@ class FrameworkParser (object):
         the definitions.
         """
         return {
-            'framework':    self.framework,
-            'arch':         self.arch,
-            'sdk':          self.sdk,
-            'release':      platform.mac_ver()[0],
+            'framework': self.framework,
+            'arch': self.arch,
+            'sdk': self.sdk,
+            'release': platform.mac_ver()[0],
 
-            'headers':      list(sorted(self.headers)),
+            'headers': list(sorted(self.headers)),
 
             'definitions': {
-                'enum':      self.enum_values,
-                'structs':   self.structs,
-                'externs':   self.externs,
-                'literals':  self.literals,
-                'aliases':   self.aliases,
-                'expressions':   self.expressions,
+                'enum': self.enum_values,
+                'structs': self.structs,
+                'externs': self.externs,
+                'literals': self.literals,
+                'aliases': self.aliases,
+                'expressions': self.expressions,
                 'functions': self.functions,
-                'cftypes':   self.cftypes,
+                'cftypes': self.cftypes,
                 'func_macros': self.func_macros,
                 'formal_protocols': self.formal_protocols,
                 'informal_protocols': self.informal_protocols,
@@ -289,10 +134,13 @@ class FrameworkParser (object):
             },
         }
 
+    @property
     def exceptions(self):
         functions = {}
         for nm, definition in self.functions.items():
             info = {}
+
+            # My Read: Get rid of all function specs that take ptr arguments?
             for idx, a in enumerate(definition['args']):
                 if a['typestr'].startswith('^'):
                     a = dict(a)
@@ -301,16 +149,19 @@ class FrameworkParser (object):
                     try:
                         info['args'][idx] = a
                     except KeyError:
-                        info['args'] = { idx: a }
+                        info['args'] = {idx: a}
 
+            # My Read: Get rid of all typestrs of pointer return types
             if definition['retval']['typestr'].startswith('^'):
                 a = dict(definition['retval'])
                 del a['typestr']
                 info['retval'] = a
 
+            # My Read: Copy over the variadicness
             if definition.get('variadic', False):
                 info['variadic'] = True
 
+            # My Read: Add it
             if info:
                 functions[nm] = info
 
@@ -320,6 +171,7 @@ class FrameworkParser (object):
             for prot, protdef in getattr(self, section).items():
                 for meth in protdef['methods']:
                     info = {}
+                    # My Read: remove metadata for protocol methods that take pointer args
                     for idx, a in enumerate(meth['args']):
                         if a['typestr'].startswith('^'):
                             a = dict(a)
@@ -330,16 +182,18 @@ class FrameworkParser (object):
                             except KeyError:
                                 info['args'] = {idx: a}
 
+                    # My Read: remove metadata for protocol methods that return pointers
                     if meth['retval']['typestr'].startswith('^'):
                         a = dict(meth['retval'])
                         del a['typestr']
                         del a['typestr_special']
                         info['retval'] = a
 
+                    # My Read: copy over variadic flag
                     if meth.get('variadic', False):
                         info['variadic'] = True
 
-
+                    # My Read: copy over other stuff
                     if info:
                         if prot not in prots[section]:
                             prots[section][prot] = {}
@@ -349,11 +203,12 @@ class FrameworkParser (object):
                         info['selector'] = meth['selector']
                         info['class_method'] = meth['class_method']
                         prots[section][prot]['methods'].append(info)
-                meth = None
 
+                # My Read: remove metadata for propeties of pointer types
                 for prop in protdef['properties']:
                     if prop['typestr'].startswith('^'):
-                        if prot not in formal_protocols:
+                        # My Read: for informal prots only, add a dictionary
+                        if prot not in self.formal_protocols:
                             prots[section][prot] = {}
                         if 'properties' not in prots[section][prot]:
                             prots[section][prot]['properties'] = []
@@ -362,7 +217,6 @@ class FrameworkParser (object):
                         del prop['typestr']
                         del prop['typestr_special']
                         prots[section][prot]['properties'].append(prop)
-                prop = None
 
         classes = {}
         for clsname, clsdef in self.classes.items():
@@ -376,7 +230,7 @@ class FrameworkParser (object):
                         try:
                             info['args'][idx] = a
                         except KeyError:
-                            info['args'] = { idx: a }
+                            info['args'] = {idx: a}
 
                 if method['retval']['typestr'].startswith('^'):
                     a = dict(method['retval'])
@@ -409,7 +263,6 @@ class FrameworkParser (object):
                     del prop['typestr_special']
                     classes[clsname]['properties'].append(prop)
 
-
         return {
             'definitions': {
                 'functions': functions,
@@ -419,146 +272,99 @@ class FrameworkParser (object):
             },
         }
 
-    def _select_node(self, node):
+    def should_process_cursor(self, cursor):
         """
         Return True iff ``node`` is an AST node that's loaded from a
         header for the current framework.
         """
-        if not isinstance(node, c_ast.Node):
-            print "not ast", node
-            return False
-
-        if node.coord is None:
-            print "no coord", node
-            return False
-
-        if node.coord.file is None:
-            print "no file", node
-            return False
-
-        if self.framework_path in node.coord.file:
-            i = node.coord.file.index(self.framework_path)
-            p = node.coord.file[i+len(self.framework_path) +len('Headers/'):]
-
-            if self.only_headers:
-                if os.path.basename(p) not in self.only_headers:
-                    print "not header", node
-                    return False
-
-            self.headers.add(p)
-            print "use", node
+        # always descend from the top...
+        if cursor.kind == CursorKind.TRANSLATION_UNIT:
             return True
 
-        print "not framework",node
+        framework_dir = self.framework_path
+        while cursor and cursor.kind != CursorKind.TRANSLATION_UNIT:
+            node_file = cursor.location.file
+            if node_file and framework_dir in node_file.name:
+                # make a note of it in our headers list, unless it's the umbrella headers
+                base_name = os.path.basename(node_file.name)
+                if base_name != os.path.basename(self.start_header):
+                    self.headers.add(base_name)
+                # descend
+                return True
+            else:
+                # check the next node up
+                cursor = cursor.lexical_parent
+
         return False
 
-    def _calculate_enum_value(self, name, unsigned=False):
-        fname = '_prs_%s.m'%(self.framework,)
-        with open(fname, 'w') as fp:
-            self._gen_includes(fp)
+    def add_alias(self, alias, value):
+        assert isinstance(alias, str)
+        self.aliases[alias] = value
 
-            fp.write("#include <stdio.h>\n")
-            fp.write("int main(void) {\n")
-            if unsigned:
-                fp.write("   printf(\"%%llu\\n\", (unsigned long long)%s);\n"%(name,))
-            else:
-                fp.write("   printf(\"%%lld\\n\", (long long)%s);\n"%(name,))
-            fp.write("   return 0;\n")
-            fp.write("}\n")
+    def add_typedef(self, name, typedef):
+        self.typedefs[name] = typedef
 
-        p = subprocess.Popen([CPP,
-            '-o', fname[:-2],
-            '-arch', self.arch,
-            '-isysroot', self.sdk,
-            '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings',
-            fname,
-            '-framework', self.link_framework])
-        xit = p.wait()
-        os.unlink(fname)
-        if xit != 0:
-            print "WARNING: Cannot calculate value for '%s'"%(name,)
-            return None
+    def add_enumeration(self, node):
+        name = node.spelling
+        if name is None or name == "":
+            name = "<anon>"
 
-        p = subprocess.Popen(['./' + fname[:-2]], stdout=subprocess.PIPE)
-        data = p.communicate()[0]
-        xit = p.wait()
-        os.unlink(fname[:-2])
-        if xit != 0:
-            print "WARNING: Cannot calculate value for '%s'"%(name,)
-            return None
+        value_count = 0
 
+        if node.kind == CursorKind.ENUM_CONSTANT_DECL:
+            self.enum_values[name] = node.enum_value
+            value_count = 1
 
-        return int(data.strip())
+        elif node.kind == CursorKind.ENUM_DECL:
+            for val in filter(lambda x: x.kind == CursorKind.ENUM_CONSTANT_DECL, node.get_children() or []):
+                # Add the enum to the name -> value mapping
+                val_name = val.spelling
+                self.enum_values[val_name] = val.enum_value
 
-    def append_enumerator_list(self, node):
+                # Check to see if there's also an alias inherent in this declaration
+                children = list(filter(lambda x: x.kind.is_expression(), val.get_children()))
+                if len(children) == 1:
+                    referenced_decl = children[0].referenced_distinct
+                    if referenced_decl and referenced_decl.kind == CursorKind.ENUM_CONSTANT_DECL:
+                        other_name = referenced_decl.spelling
+                        if len(other_name or ""):
+                            self.aliases[val_name] = other_name
+                elif len(children) > 1:
+                    debug_break()
 
-        prev_name = None
-        prev_value = None
-        for item in node.children():
+                value_count += 1
 
-            value = item.value
-            if value is not None:
-                value = constant_fold(value, self.enum_values)
+        if self.verbose:
+            print("Added enumeration: %s with %d values" % (name, value_count))
 
-            if value is None:
-                if prev_value is not None:
-                    value = prev_value + 1
-
-                elif prev_name is not None:
-                    value = c_ast.BinaryOp(
-                        '+', prev_name, c_ast.Constant('int', 1))
-
-                else:
-                    value = 0
-
-            elif isinstance(value, c_ast.Constant) and value.type == 'int':
-                if value.value.startswith('!'):
-                    value = parse_int(value.value[1:])
-                    if value:
-                        value = 0
-                    else:
-                        value = 1
-                else:
-                    value = parse_int(value.value)
-
-            prev_name = item.name
-            if isinstance(value, (int, long)):
-                prev_value = value
-            else:
-                prev_value = None
-
-                if isinstance(value, c_ast.ID):
-                    self.aliases[item.name] = value.name
-                    continue
-
-                else:
-                    value = self._calculate_enum_value(item.name)
-
-                if value is None:
-                    continue
-
-            self.enum_values[item.name] = value
-
-    def add_cftype(self, name, type):
-        typestr, _ = self.typecodes.typestr(type)
+    def add_cftype(self, name, cftype, override_typestring=None):
+        typestr = override_typestring if override_typestring is not None else self.__get_typestr(cftype)[0]
         self.cftypes[name] = {
             'typestr': typestr,
         }
+        if self.verbose:
+            print("Added CFType: " + name)
 
-    def add_struct(self, name, type):
-        if name in self.typecodes:
-            typestr = self.typecodes[name]
-            special = self.typecodes.isspecial(name)
-
-        else:
-            typestr, special = self.typecodes.typestr(type)
-
+    def add_struct(self, name, struct_type):
+        typestr, special = self.__get_typestr(struct_type, exogenous_name=name)
 
         fieldnames = []
-        if type.decls is not None:
-            for decl in type.decls:
-                fieldnames.append(decl.name)
-                ts, _ = self.typecodes.typestr(decl.type)
+
+        walker = struct_type
+        while walker and walker.kind == TypeKind.TYPEDEF:
+            next_type = walker.next_typedefed_type
+            if next_type:
+                walker = next_type
+            else:
+                break
+
+        type_decl = walker.declaration
+        if type_decl is not None:
+            for field_decl in type_decl.get_struct_field_decls():
+                fieldnames.append(field_decl.spelling)
+                ts, _ = self.__get_typestr(field_decl.type)
+                assert ts
+
                 if '?' in ts:
                     #print "Skip %s: contains function pointers"%(name,)
                     return
@@ -569,24 +375,315 @@ class FrameworkParser (object):
             'special': special,
         }
 
-    def add_extern(self, name, type):
-        typestr, _ = self.typecodes.typestr(type)
+        if self.verbose:
+            print("Added struct: " + name)
+
+    def add_extern(self, name, node):
+        node_type = node.type
+        typestr, special = self.__get_typestr(node_type)
+
+        if not special and '?' == typestr:
+            clang_typestr = node.objc_type_encoding
+            if len(str(clang_typestr)) > 0:
+                typestr = clang_typestr
+
+        assert name is not None and typestr is not None and typestr is not "" and typestr is not "?", "Bad params"
         self.externs[name] = {
             'typestr': typestr,
         }
+        if self.verbose:
+            print("Added extern: " + name + " typestr: " + typestr)
 
-    def parse_defines(self, fname):
-        p = subprocess.Popen(
-            [CPP, '-arch', self.arch, '-isysroot', self.sdk, '-DMAC_OS_X_VERSION_MIN_REQUIRED=1040', '-Wno-#warnings', '-E', '-Wp,-dD', fname],
-            stdout=subprocess.PIPE)
-        data = p.communicate()[0]
-        xit = p.wait()
-        if xit != 0:
-            print "WARNING: Cannot extract #defines from file"
-            return []
+    def add_function(self, node):
+        name = node.spelling
+        if 'CFBundleGetFunctionPointersForNames' in name:
+            print ("stop")
+        if name.startswith('__'):
+            return
 
-        curfile = None
-        lines = data.splitlines()
+        funcspec = node.get_function_specifiers()
+
+        self.functions[node.spelling] = func = {
+            'retval': {'typestr': None},
+            'args': [],
+        }
+
+        # Does it follow the CF returns-retained pattern?
+        if 'Create' in name:
+            parts = name.split('Create', 1)
+            second_part = parts[-1]
+            first_letter = None if len(second_part) == 0 else second_part[0]
+            if not first_letter or first_letter.isupper():
+                func['retval']['already_cfretained'] = True
+
+        elif 'Copy' in name:
+            parts = name.split('Copy', 1)
+            second_part = parts[-1]
+            first_letter = None if len(second_part) == 0 else second_part[0]
+            if not first_letter or first_letter.isupper():
+                func['retval']['already_cfretained'] = True
+
+        # is function inline?
+        if 'inline' in funcspec or '__inline__' in funcspec:
+            func['inline'] = True
+
+        # get return type
+        return_type = node.result_type
+        return_type_typestr = self.__get_typestr(return_type)[0]
+        func['retval']['typestr'] = return_type_typestr
+
+        # get arguments
+        arg_gen = node.get_arguments()
+        args = [] if arg_gen is None else list(arg_gen)
+
+        if node.type.is_function_variadic():
+            func['variadic'] = True
+
+        for arg in args:
+            arg_type = arg.type
+
+            arginfo = {
+                'name': arg.spelling,
+                'typestr': self.__get_typestr(arg_type)[0],
+            }
+
+            if arg_type.kind == TypeKind.BLOCKPOINTER:
+                arginfo['block'] = self.__extract_block(arg.type)
+
+            if arg_type.looks_like_function:
+                arginfo['function'] = self.__extract_function(arg_type)
+
+            # get qualifiers
+            qualifiers = arg.objc_decl_qualifiers or ObjcDeclQualifier(ObjcDeclQualifier.Flag_None)
+
+            # update for special cases
+            if FrameworkParser.__node_is_cferror_ptr(arg_type):
+                # Function returns a CFError object by reference
+                qualifiers.is_out = True
+
+                # Where we can pass in 'NULL' if we don't want the error object
+                arginfo['null_accepted'] = True
+
+                # User must CFRelease the error object
+                arginfo['already_cfretained'] = True
+
+            # write back qualifiers
+            encode_str = qualifiers.to_encode_string()
+            if encode_str != "":
+                arginfo['type_modifier'] = encode_str
+
+            # add the arginfo to the args array
+            func['args'].append(arginfo)
+
+        # special handling for CF GetTypeID functions
+        if name.endswith('GetTypeID'):
+            assert return_type.spelling == "CFTypeID"
+            arg_type = name[:-9] + 'Ref'
+            if arg_type in self.cftypes:
+                self.cftypes[arg_type]['gettypeid_func'] = name
+
+        # Ideally libclang would give us full parsing of __attributes__ but it doesn't. We do the best we can,
+        # and what libclang gives us is arguably better than is_variadic and arg_name == "format"
+        index_of_printf_format_arg = FrameworkParser.__index_of_printf_format_arg(node)
+        if index_of_printf_format_arg is not None:
+            if index_of_printf_format_arg < len(func['args']):
+                arg = func['args'][index_of_printf_format_arg]
+                arg['printf_format'] = True
+            else:
+                # basically, libclang's C API doesnt expose the values we need to be sure about this in all cases
+                for arg in func['args']:
+                    if arg['name'] == "format":
+                        arg['printf_format'] = True
+        else:
+            # Let's check the old way just in case. There *are* functions in Apple's frameworks that don't have
+            # the right __attribute__, believe it or not.
+            if func.get('variadic'):
+                for arg in func['args']:
+                    if arg['name'] == "format":
+                        diagnostic_string = "Looks like we might have a printf function, but we didn't" + \
+                                            "find the attribute; take a look: " + node.get_raw_contents() + \
+                                            str(node.location)
+                        print(diagnostic_string)
+
+        # This is arguably not necessary, but matches the behavior of the previous parsing engine.
+        # Ideally we would get rid of this.
+        if len(func['args']) == 0:
+            func['args'].append({"name": None, "typestr": "v"})
+
+        # Log message
+        if self.verbose:
+            string = "Added function: " + name + " return typestr: " + func['retval']['typestr'] + " args: "
+            for idx, arg in enumerate(func['args']):
+                string = string + " " + str(idx) + ": " + (arg['name'] or "") + ", " + (arg['typestr'] or "")
+            print(string)
+
+    def add_protocol(self, node):
+        self.formal_protocols[node.spelling] = protocol = {
+            'implements': map(lambda x: x.referenced.spelling, node.get_adopted_protocol_nodes()),
+            'methods': [],
+            'properties': [],
+        }
+
+        for decl in node.get_children() or []:
+            if decl.kind == CursorKind.OBJC_INSTANCE_METHOD_DECL or decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL:
+                meth = self.__extract_methoddecl(decl)
+                meth['required'] = not decl.is_optional_for_protocol
+                protocol['methods'].append(meth)
+
+            elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
+                typestr, special = self.__get_typestr(decl.type)
+                this_property = {
+                    'name': decl.spelling,
+                    'typestr': typestr,
+                    'typestr_special': special,
+                }
+                attributes = decl.get_property_attributes()
+                if attributes and len(attributes):
+                    this_property['attributes'] = attributes
+
+                protocol['properties'].append(this_property)
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+        if self.verbose:
+            print("Added protocol: " + node.spelling)
+
+    def add_informal_protocol(self, node):
+        self.informal_protocols[node.spelling] = protocol = {
+            'implements': map(lambda x: x.referenced.spelling, node.get_adopted_protocol_nodes()),
+            'methods': [],
+            'properties': [],
+        }
+
+        for decl in node.get_children() or []:
+            if decl.kind == CursorKind.OBJC_INSTANCE_METHOD_DECL or decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL:
+                meth = self.__extract_methoddecl(decl)
+                protocol['methods'].append(meth)
+
+            elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
+                typestr, special = self.__get_typestr(decl.type)
+                this_property = {
+                    'name': decl.spelling,
+                    'typestr': typestr,
+                    'typestr_special': special,
+                }
+                attributes = decl.get_property_attributes()
+                if attributes and len(attributes):
+                    this_property['attributes'] = attributes
+
+                protocol['properties'].append(this_property)
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+        if self.verbose:
+            print("Added informal protocol: " + node.spelling)
+
+    def add_class(self, node):
+
+        if node.spelling in self.classes:
+            class_info = self.classes[node.spelling]
+        else:
+            #get superclass
+            superclass_name = None
+            for child in filter(lambda x: x.kind == CursorKind.OBJC_SUPER_CLASS_REF, node.get_children()):
+                superclass = child.referenced
+                superclass_name = superclass.spelling
+
+            class_info = self.classes[node.spelling] = {
+                'name': node.spelling,
+                'super': superclass_name,
+                'protocols': set(),
+                'methods': [],
+                'categories': [],
+                'properties': [],
+            }
+
+        for proto_ref in node.get_adopted_protocol_nodes():
+            proto_str = proto_ref.referenced.spelling
+            class_info['protocols'].add(proto_str)
+
+        # This used to track visibility for methods, which is not a thing (only for ivars) and made no sense
+
+        for decl in node.get_children() or []:
+            if decl.kind == CursorKind.OBJC_INSTANCE_METHOD_DECL or decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL:
+                meth = self.__extract_methoddecl(decl)
+                class_info['methods'].append(meth)
+
+            elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
+                typestr, special = self.__get_typestr(decl.type)
+                class_info['properties'].append({
+                    'name': decl.spelling,
+                    'typestr': typestr,
+                    'typestr_special': special,
+                    'attributes': decl.get_property_attributes(),
+                })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+        if self.verbose:
+            print("Added class: " + node.spelling)
+
+    def add_macro(self, macro_name):
+        self.macro_names.add(macro_name)
+        if self.verbose:
+            print("Noted macro: " + macro_name)
+
+    def add_category(self, node):
+        category_name = node.spelling
+        class_cursor = node.get_category_class_cursor().referenced
+        class_name = class_cursor.referenced.spelling
+        if (class_name or "") == "":
+            print ("s")
+
+        if class_name in self.classes:
+            class_info = self.classes[class_name]
+        else:
+            class_info = self.classes[class_name] = {
+                'name': class_name,
+                'methods': [],
+                'protocols': set(),
+                'properties': [],
+            }
+
+        for proto_ref in node.get_adopted_protocol_nodes():
+            proto_str = proto_ref.referenced.spelling
+            class_info['protocols'].add(proto_str)
+
+        for decl in node.get_children() or []:
+            if decl.kind == CursorKind.OBJC_INSTANCE_METHOD_DECL or decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL:
+                meth = self.__extract_methoddecl(decl)
+                class_info['methods'].append(meth)
+
+            elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
+                typestr, special = self.__get_typestr(decl.type)
+                class_info['properties'].append({
+                    'name': decl.spelling,
+                    'typestr': typestr,
+                    'typestr_special': special,
+                    'attributes': decl.get_property_attributes(),
+                })
+
+            else:
+                # Declaration can contain nested definitions that are picked
+                # up by other code, ignore those here.
+                pass
+
+        if self.verbose:
+            print("Added category on class: " + str(class_name) + " named: " + str(category_name))
+
+    # This is largely unmolested from the original parser, but operates on a single define and not the whole
+    # file and no longer makes its own invocation, but uses libclang with the PARSE_DETAILED_PROCESSING_RECORD option
+    def parse_define(self, define_str, curfile=""):
+        if not define_str.startswith("#define "):
+            define_str = "#define " + define_str
+        lines = [define_str]
         for ln_idx, ln in enumerate(lines):
 
             m = LINE_RE.match(ln)
@@ -610,7 +707,6 @@ class FrameworkParser (object):
                     # Ignore private definitions
                     continue
 
-
                 value = m.group(2)
                 if value.endswith('\\'):
                     # Complex macro, ignore
@@ -629,11 +725,15 @@ class FrameworkParser (object):
                 m = INT_RE.match(value)
                 if m is not None:
                     self.enum_values[key] = int(m.group(1), 0)
+                    if self.verbose:
+                        print("Added enum_value name: " + key + " value: " + str(self.enum_values[key]))
                     continue
 
                 m = FLOAT_RE.match(value)
                 if m is not None:
                     self.literals[key] = float(m.group(1))
+                    if self.verbose:
+                        print("Added macro literal name: " + key + " value: " + str(self.literals[key]))
                     continue
 
                 m = STR_RE.match(value)
@@ -642,6 +742,8 @@ class FrameworkParser (object):
                         'unicode': False,
                         'value': m.group(1)
                     }
+                    if self.verbose:
+                        print("Added macro literal name: " + key + " value: " + str(self.literals[key]['value']))
                     continue
 
                 m = UNICODE_RE.match(value)
@@ -650,15 +752,21 @@ class FrameworkParser (object):
                         'unicode': True,
                         'value': unicode(m.group(1))
                     }
+                    if self.verbose:
+                        print("Added macro literal name: " + key + " value: " + str(self.literals[key]['value']))
                     continue
 
                 m = UNICODE2_RE.match(value)
                 if m is not None:
                     self.literals[key] = unicode(m.group(1))
+                    if self.verbose:
+                        print("Added macro literal name: " + key + " value: " + str(self.literals[key]))
                     continue
 
                 if value in ('nil', 'NULL', 'Nil'):
                     self.literals[key] = None
+                    if self.verbose:
+                        print("Added macro literal name: " + key + " value: " + str(self.literals[key]))
                     continue
 
                 m = ALIAS_RE.match(value)
@@ -673,17 +781,22 @@ class FrameworkParser (object):
                     value = m.group(1)
                     if value not in ('extern', 'static', 'inline', 'float',):
                         self.aliases[key] = m.group(1)
+                        if self.verbose:
+                            print("Added alias name: " + key + " value: " + str(self.aliases[key]))
                     continue
 
                 if value == '(INT_MAX-1)':
                     if self.arch in ('i386', 'ppc'):
-                        self.enum_values[key] = (1 << 31)-1
+                        self.enum_values[key] = (1 << 31) - 1
+                        if self.verbose:
+                            print("Added enum_values name: " + key + " value: " + str(self.enum_values[key]))
                         continue
 
                     elif self.arch in ('x86_64', 'ppc64'):
-                        self.enum_values[key] = (1 << 63)-1
+                        self.enum_values[key] = (1 << 63) - 1
+                        if self.verbose:
+                            print("Added enum_values name: " + key + " value: " + str(self.enum_values[key]))
                         continue
-
 
                 if key in ('NS_DURING', 'NS_HANDLER', 'NS_ENDHANDLER'):
                     # Classic exception handling in Foundation
@@ -698,398 +811,748 @@ class FrameworkParser (object):
                     # Constant CFUUID definitions, used in a number of
                     # frameworks
                     self.called_definitions[key] = value.replace('NULL', 'None')
+                    if self.verbose:
+                        print("Added called_definitions name: " + key + " value: " + str(self.called_definitions[key]))
                     continue
 
                 m = ERR_SUB_DEFINE_RE.match(value)
                 if m is not None:
-                    v = parse_int(m.group(1))
-                    self.enum_values[key] = (v&0xfff)<<14
+                    v = FrameworkParser.__parse_int(m.group(1))
+                    self.enum_values[key] = (v & 0xfff) << 14
+                    if self.verbose:
+                        print("Added enum_values name: " + key + " value: " + str(self.enum_values[key]))
                     continue
 
                 m = ERR_SYSTEM_DEFINE_RE.match(value)
                 if m is not None:
-                    v = parse_int(m.group(1))
-                    self.enum_values[key] = (v&0x3f)<<26
+                    v = FrameworkParser.__parse_int(m.group(1))
+                    self.enum_values[key] = (v & 0x3f) << 26
+                    if self.verbose:
+                        print("Added enum_values name: " + key + " value: " + str(self.enum_values[key]))
                     continue
 
                 m = NULL_VALUE.match(value)
                 if m is not None:
                     # For #define's like this:  #define kDSpEveryContext ((DSpContextReference)NULL)
                     self.literals[key] = None
+                    if self.verbose:
+                        print("Added literals name: " + key + " value: " + str(self.literals[key]))
+
                     continue
-
-
 
                 m = SC_SCHEMA_RE.match(value)
                 if m is not None:
+                    #noinspection PyProtectedMember
                     self.externs[key] = objc._C_ID
+                    if self.verbose:
+                        print("Added externs name: " + key + " value: " + str(self.externs[key]))
                     continue
 
                 m = OR_EXPR_RE.match(value)
                 if m is not None:
                     self.expressions[key] = value
+                    if self.verbose:
+                        print("Added expressions name: " + key + " value: " + str(self.expressions[key]))
                     continue
 
                 m = CALL_VALUE.match(value)
                 if m is not None:
                     self.expressions[key] = value
+                    if self.verbose:
+                        print("Added expressions name: " + key + " value: " + str(self.expressions[key]))
                     continue
 
-                print "Warning: ignore #define %r %r"%(key, value)
+                print "Warning: ignore #define %r %r" % (key, value)
 
             m = FUNC_DEFINE_RE.match(ln)
             if m is not None:
                 proto = m.group(1)
                 body = m.group(2).strip()
                 if body == '\\':
-                    body = body[ln_idx+1].strip()
+                    body = body[ln_idx + 1].strip()
                     if body.endswith('\\'):
-                        print "Warning: ignore complex function #define %s"(proto,)
+                        print("Warning: ignore complex function #define %s" % (proto, ))
                         continue
 
-                funcdef = "def %s: return %s"%(proto, body)
+                funcdef = "def %s: return %s" % (proto, body)
                 try:
                     compile(funcdef, '-', 'exec')
                 except SyntaxError:
                     pass
 
                 else:
-                    self.func_macros[proto.split('(')[0]] = funcdef
+                    key = proto.split('(')[0]
+                    self.func_macros[key] = funcdef
+                    if self.verbose:
+                        print("Added func_macros name: " + key + " value: " + self.func_macros[key])
 
+    @staticmethod
+    def __node_is_cferror_ptr(node):
+        """
 
-    def add_function(self, name, type, funcspec):
-        if name.startswith('__'):
-            return
+        @type node: Cursor
+        @param node:
+        @rtype : bool
+        """
+        if isinstance(node, Cursor):
+            node = node.type
 
-        self.functions[name] = func = {
-            'retval': {'typestr': None },
+        if node.kind != TypeKind.POINTER:
+            return False
+
+        node = node.get_pointee()
+
+        if node.spelling == "CFErrorRef":
+            return True
+
+        return False
+
+    @staticmethod
+    def __index_of_printf_format_arg(node):
+        """
+
+        @type node: Cursor
+        @param node:
+        @rtype : int
+        """
+        index_of_format_arg = None
+        for child in node.get_children():
+            if child.kind.is_attribute():
+                has_format_attr = False
+                is_printf_not_scanf = False
+                for token in child.get_tokens():
+                    string = token.spelling
+                    if string == "format":
+                        has_format_attr = True
+
+                    elif string in ["printf", "__printf__", "NSString", "__NSString__", "CFString", "__CFString__"]:
+                        is_printf_not_scanf = True
+
+                    elif string == "scanf":
+                        is_printf_not_scanf = False
+
+                    elif has_format_attr and is_printf_not_scanf and index_of_format_arg is None:
+                        try:
+                            # attribute syntax uses counting numbers, we use array indexes
+                            val = int(string) - 1
+
+                        except ValueError:
+                            index_of_format_arg = None
+
+                        else:
+                            index_of_format_arg = val if val >= 0 else None
+
+        return index_of_format_arg
+
+    def __extract_function_like_thing(self, thing):
+        """
+
+        @rtype : dict
+        """
+        return_type = thing.get_result()
+        assert return_type.kind != TypeKind.INVALID
+
+        result = dict()
+        result['retval'] = {
+            'typestr': self.__get_typestr(return_type)[0],
+        }
+        result['args'] = []
+
+        arg_types_iter = thing.argument_types()
+        arg_types = [] if arg_types_iter is None else list(arg_types_iter)
+
+        if thing.is_function_variadic():
+            result['variadic'] = True
+
+        for arg in arg_types:
+            assert arg.kind != TypeKind.INVALID
+            result['args'].append({
+                'typestr': self.__get_typestr(arg)[0],
+            })
+
+        if len(result['args']) == 0:
+            result['args'].append({"name": None, "typestr": "v"})
+
+        return result
+
+    def __extract_block(self, block):
+        """
+
+        @rtype : dict
+        """
+        if isinstance(block, Cursor):
+            block = block.type
+
+        assert isinstance(block, Type), "huh"
+
+        if isinstance(block, Type) and block.kind == TypeKind.BLOCKPOINTER:
+            block = block.get_pointee()
+
+        return self.__extract_function_like_thing(block)
+
+    def __extract_function(self, func):
+        """
+
+        @rtype : dict
+        """
+        if isinstance(func, Cursor):
+            func = func.type
+
+        assert isinstance(func, Type), "huh"
+
+        #func = func.get_canonical()
+        # Going straight to the canonical robs us of "special" conversions
+        if func.kind == TypeKind.TYPEDEF:
+            td = func.declaration
+            ult = None if td is None else td.underlying_typedef_type_valid
+            if ult:
+                func = ult
+            else:
+                func = func.get_canonical()
+
+        while func.kind == TypeKind.POINTER:
+            func = func.get_pointee()
+
+        return self.__extract_function_like_thing(func)
+
+    def __extract_methoddecl(self, decl):
+        """
+
+        @rtype : dict
+        """
+        if decl.result_type.valid_type is None:
+            typestr, special = '@', False
+        else:
+            typestr, special = self.__get_typestr(decl.result_type.valid_type)
+
+        # TODO: Remove visibility from method metadata. This is just so we align with the old metadata.
+        # There's actually no visibility for methods -- they're all public.
+
+        meth = {
+            'selector': decl.spelling,
+            'visibility': 'public',
+            'class_method': bool(decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL),
+            'retval': {'typestr': typestr, 'typestr_special': special, },
             'args': [],
         }
 
-        if 'Create' in name or 'Copy' in name:
-            # FIXME: Net to check that the next character is not a lowercase alpha.
-            func['retval']['already_cfretained'] = True
+        if decl.is_variadic:
+            meth['variadic'] = True
 
-
-        if 'inline' in funcspec or '__inline__' in funcspec:
-            func['inline'] = True
-
-        func['retval']['typestr'] = self.typecodes.typestr(type.type)[0]
-        if type.args is None:
-            func['xxx-no-params'] = True
-        for arg in (type.args.params if type.args is not None else []):
-            if isinstance(arg, c_ast.EllipsisParam):
-                func['variadic'] = True
-                continue
-
-            arginfo = {
-                'name': arg.name,
-                'typestr': self.typecodes.typestr(arg.type)[0],
-            }
-
-            tp = arg.type
-            if isinstance(tp, c_ast.TypeDecl) and isinstance(tp.type, c_ast.IdentifierType):
-                if tp.type.names[0] in self._func_protos:
-                    arginfo['function'] = self._func_protos[tp.type.names[0]]
-
-                else:
-                    try:
-                        tp = self.typedefs[tp.type.names[0]]
-                    except KeyError:
-                        pass
-
-            if isinstance(tp, c_ast.BlockPtrDecl):
-                arginfo['block'] = self.extract_block(tp)
-
-
-            if isinstance(tp, c_ast.PtrDecl) and isinstance(tp.type, c_ast.FuncDecl):
-                arginfo['function'] = self.extract_function(tp)
-
-            if iscferrorptr(tp):
-                # Function returns a CFError object by reference
-
-                # This is an output argument:
-                arginfo['type_modifier'] = objc._C_OUT
-
-                # Where we can pass in 'nil' if we don't want the error object
-                arginfo['null_accepted'] = True
-
-                # User must CFRelease the error object
-                arginfo['already_cfretained'] = True
-
-            func['args'].append(arginfo)
-
-        if name.endswith('GetTypeID'):
-            tp = name[:-9] + 'Ref'
-            if tp in self.cftypes:
-                self.cftypes[tp]['gettypeid_func'] = name
-
-        if func.get('variadic', False):
-            for a in func['args']:
-                if a['name'] == 'format' and a['typestr'] in ('^{__CFString=}', '@'):
-                    a['printf_format'] = True
-
-    def extract_block(self, blockptr):
-        if not isinstance(blockptr.type, c_ast.FuncDecl):
-            print "WARNING: Cannot extract block info"
-            return {}
-
-        func = blockptr.type
-
-        result = {}
-        result['retval'] = {
-            'typestr': self.typecodes.typestr(func.type),
-        }
-        result['args'] = []
-        if func.args is not None:
-            for a in func.args.params:
-                if isinstance(a, c_ast.EllipsisParam):
-                    result['variadic'] = True
-                    continue
-                result['args'].append({
-                    'typestr': self.typecodes.typestr(a.type),
-                })
-        return result
-
-    def extract_function(self, functionptr):
-        if not isinstance(functionptr.type, c_ast.FuncDecl):
-            print "WARNING: Cannot extract function info"
-            return {}
-
-        func = functionptr.type
-
-        result = {}
-        result['retval'] = {
-            'typestr': self.typecodes.typestr(func.type),
-        }
-        result['args'] = []
-        if func.args is not None:
-            for a in func.args.params:
-                if isinstance(a, c_ast.EllipsisParam):
-                    result['variadic'] = True
-                    continue
-                result['args'].append({
-                    'typestr': self.typecodes.typestr(a.type),
-                })
-        return result
-
-    def extract_methoddecl(self, decl):
-        """
-        Return interesting information from a MethodDecl
-        """
-        if decl.retval is None:
-            tc = '@', False
-        else:
-            tc = self.typecodes.typestr(decl.retval.type)
-
-        meth = {
-            'selector': decl.selector,
-            'class_method': decl.class_method,
-            'retval': {
-                'typestr': tc[0],
-                'typestr_special': tc[1],
-            },
-            'args': [
-            ],
-        }
-        for a in decl.args:
-            if isinstance(a, c_ast.EllipsisParam):
-                meth['variadic'] = True
-                continue
-
+        for a in decl.get_arguments():
             if a is None:
-                tc = '@', False
+                typestr, special = '@', False
             else:
-                tc = self.typecodes.typestr(a.type)
-            meth['args'].append({
-                'typestr': tc[0],
-                'typestr_special': tc[1],
-            })
+                typestr, special = self.__get_typestr(a.type)
+
+            meth['args'].append({'typestr': typestr, 'typestr_special': special, })
 
         return meth
 
+    def __includes_string(self):
+        """
 
-    def add_protocol(self, node):
-        self.formal_protocols[node.name] = protocol = {
-            'implements': node.protocols,
-            'methods': [],
-            'properties': [],
-        }
-        cur_visibility='public'
-        cur_required=True
+        @rtype : str
+        """
+        include_string = ""
+        for hdr in self.preheaders:
+            include_string += '#import <%s>\n' % (hdr,)
 
-        for decl in node.decls:
-            if isinstance(decl, c_ast.Visibility):
-                if decl.kind in ('@public', '@private', '@protected', '@package'):
-                    cur_visibility = decl.kind[1:]
-                elif decl.kind in ('@required', '@optional'):
-                    cur_required = (decl.kind == '@required')
-                else:
-                    raise ValueError(node.kind)
+        include_string += '#import <%s>\n' % (self.start_header,)
 
-            elif isinstance(decl, c_ast.MethodDecl):
-                meth = self.extract_methoddecl(decl)
-                meth['visibility'] = cur_visibility
-                meth['required'] = cur_required
-                protocol['methods'].append(meth)
+        for hdr in self.additional_headers:
+            include_string += '#import <%s/%s>' % (self.framework, hdr)
 
-            elif isinstance(decl, c_ast.Property):
-                for item in decl.decl:
-                    tc = self.typecodes.typestr(item.type)
-                    protocol['properties'].append({
-                        'name': item.name,
-                        'typestr': tc[0],
-                        'typestr_special': tc[1],
-                    })
+        for hdr in self.extraheaders:
+            include_string += '#import <%s>\n' % (hdr,)
+
+        return include_string
+
+    @staticmethod
+    def __parse_int(value):
+        """
+        Parse a C integer literal and return its value
+
+        @type value: str
+        @param value:
+        @rtype : int
+        """
+        if isinstance(value, (int, long)):
+            return value
+        value = value.lower().rstrip('l').rstrip('u')
+        return int(value, 0)
+
+    def __get_typestr(self, obj, exogenous_name=None):
+        """
+        There was a bunch of logic around "Special", but in practice, the only things that are special are ObjC BOOL and
+        anonymous structs in typedef i.e. typedef struct { int foo; } MyStruct; (Technically that struct is anonymous
+        because there's no tag, like this: typedef struct _MyStruct { int foo; } MyStruct;
+
+        @type obj: [Cursor, Type]
+        @param obj:
+        @type exogenous_name: str
+        @param exogenous_name:
+        @rtype : ( str, bool )
+        """
+        is_cursor = isinstance(obj, Cursor)
+        is_type = (not is_cursor) and isinstance(obj, Type)
+        if not is_cursor and not is_type:
+            return None, False
+
+        # get the map of arch to typestr
+        if not hasattr(obj, "_typestr_cache"):
+            obj._typestr_cache = {}
+
+        # see if we have an entry for this arch
+        cached_type_str = obj._typestr_cache.get(self.arch)
+
+        # if we don't, make one
+        if not cached_type_str:
+            if is_cursor:
+                cached_type_str = self.__typestr_from_node(obj, exogenous_name=exogenous_name)
+            elif is_type:
+                cached_type_str = self.__typestr_from_type(obj, exogenous_name=exogenous_name)
+
+            assert cached_type_str is not None
+            obj._typestr_cache[self.arch] = cached_type_str
+
+        # return it
+        return cached_type_str
+
+    #noinspection PyProtectedMember
+    def __typestr_from_type(self, clang_type, exogenous_name=None):
+        """
+
+        @type clang_type: Type
+        @param clang_type:
+        @type exogenous_name: str
+        @param exogenous_name:
+        @return: @raise UnsuportedClangOptionError:
+        @rtype : ( str, bool )
+        """
+        assert isinstance(clang_type, Type)
+
+        typestr = None
+        special = False
+        assert clang_type is not None, "bad type"
+
+        # Check for built in types
+        primitive_objc_type_for_arch = clang_type.kind.objc_type_for_arch(self.arch)
+        if primitive_objc_type_for_arch:  # should handle all builtins
+            typestr = primitive_objc_type_for_arch
+            special = False  # used to be "typestr in self._special" - That seems wrong
+
+        # OK, it's not a built-in type
+
+        # CXType_Invalid = 0,
+        elif clang_type.kind == TypeKind.INVALID:
+            pass  # no typestr for this
+
+        # CXType_Unexposed = 1,
+        elif clang_type.kind == TypeKind.UNEXPOSED:
+            # Opaque struct?
+            typedecl = clang_type.get_declaration()
+            if typedecl.kind != CursorKind.NO_DECL_FOUND:
+                typestr, special = self.__typestr_from_node(typedecl, exogenous_name=exogenous_name)
+            elif clang_type.looks_like_function:
+                typestr = "?"
+                special = False
+            else:
+                typestr = None
+                special = False
+
+        # CXType_Complex = 100,
+        elif clang_type.kind == TypeKind.COMPLEX:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
+        # CXType_Pointer = 101,
+        elif clang_type.kind == TypeKind.POINTER:
+            pointee = clang_type.get_pointee()
+            t, special = self.__typestr_from_type(pointee, exogenous_name=exogenous_name)
+            typestr = objc._C_PTR + (t if t is not None else "")
+
+        # CXType_BlockPointer = 102,
+        elif clang_type.kind == TypeKind.BLOCKPOINTER:
+            typestr = objc._C_ID + objc._C_UNDEF
+
+        # CXType_LValueReference = 103,
+        elif clang_type.kind == TypeKind.LVALUEREFERENCE:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
+        # CXType_RValueReference = 104,
+        elif clang_type.kind == TypeKind.RVALUEREFERENCE:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
+        # CXType_Record = 105,
+        elif clang_type.kind == TypeKind.RECORD:
+            typedecl = clang_type.get_declaration()
+            assert CursorKind.NO_DECL_FOUND != typedecl.kind, "Couldn't find declaration for non-primitive type"
+            exogenous_name = exogenous_name if exogenous_name else typedecl.type.spelling
+            typestr, special = self.__typestr_from_node(typedecl, exogenous_name=exogenous_name)
+
+        # CXType_Enum = 106,
+        elif clang_type.kind == TypeKind.ENUM:
+            typedecl = clang_type.get_declaration()
+            assert CursorKind.NO_DECL_FOUND != typedecl.kind, "Couldn't find declaration for non-primitive type"
+            typestr, special = self.__typestr_from_node(typedecl, exogenous_name=exogenous_name)
+
+        # CXType_Typedef = 107,
+        elif clang_type.kind == TypeKind.TYPEDEF:
+            canonical_type = clang_type.get_canonical()
+
+            if clang_type.ever_defines_to("BOOL"):
+                # Give a hint to look into it if things don't add up
+                assert canonical_type.kind == TypeKind.SCHAR
+                typestr = objc._C_NSBOOL
+                special = True
+            elif clang_type.ever_defines_to("Boolean"):
+                # Give a hint to look into it if things don't add up
+                assert canonical_type.kind == TypeKind.UCHAR
+                typestr = objc._C_NSBOOL
+                special = True
+
+            elif clang_type.ever_defines_to("CFTypeRef"):
+                typestr = objc._C_ID
+
+            elif clang_type.ever_defines_to("UniChar"):
+                typestr = objc._C_UNICHAR
 
             else:
-                # Declaration can contain nested definitions that are picked
-                # up by other code, ignore those here.
-                pass
-
-    def add_informal_protocol(self, node):
-        self.informal_protocols[node.categorie_name] = protocol = {
-            'implements': node.protocols,
-            'methods': [],
-            'properties': [],
-        }
-        cur_visibility='public'
-
-        for decl in node.decls:
-            if isinstance(decl, c_ast.Visibility):
-                if decl.kind in ('@public', '@private', '@protected', '@package'):
-                    cur_visibility = decl.kind[1:]
+                # In an ideal world, we would go right to canonical here, but we can't because we treat some typedefs
+                # like BOOL and Boolean and UniChar specially.
+                next_type = clang_type.next_typedefed_type
+                exogenous_name = exogenous_name if exogenous_name else clang_type.declaration.spelling
+                if next_type:
+                    typestr, special = self.__typestr_from_type(next_type, exogenous_name=exogenous_name)
                 else:
-                    raise ValueError(node.kind)
+                    typestr, special = self.__typestr_from_type(canonical_type, exogenous_name=exogenous_name)
 
-            elif isinstance(decl, c_ast.MethodDecl):
-                meth = self.extract_methoddecl(decl)
-                meth['visibility'] = cur_visibility
-                protocol['methods'].append(meth)
+                if typestr == "^?" and clang_type.looks_like_function:
+                    # Maybe we can do better in the future?
+                    pass
 
-            elif isinstance(decl, c_ast.Property):
-                for item in decl.decl:
-                    tc = self.typecodes.typestr(item.type)
-                    protocol['properties'].append({
-                        'name': item.name,
-                        'typestr': tc[0],
-                        'typestr_special': tc[1],
-                    })
+                if "{" in typestr:  # hopefully checking the string is cheaper than fetching the declaration
+                    canonical_type_decl = canonical_type.declaration
+                    # anonymous struct... we treat these as "special" for some reason
+                    if canonical_type_decl and canonical_type_decl.kind == CursorKind.STRUCT_DECL \
+                            and canonical_type_decl.spelling == "":
+                        special = True
 
+        # CXType_ObjCInterface = 108,
+        elif clang_type.kind == TypeKind.OBJCINTERFACE:
+            pass  # no typestr for this
+
+        # CXType_ObjCObjectPointer = 109,
+        elif clang_type.kind == TypeKind.OBJCOBJECTPOINTER:
+            typestr = objc._C_ID
+
+        # CXType_FunctionNoProto = 110,
+        elif clang_type.kind == TypeKind.FUNCTIONNOPROTO:
+            typestr = ''
+
+        # CXType_FunctionProto = 111,
+        elif clang_type.kind == TypeKind.FUNCTIONPROTO:
+            typestr = objc._C_UNDEF
+
+        # CXType_ConstantArray = 112,
+        elif clang_type.kind in [TypeKind.CONSTANTARRAY, TypeKind.INCOMPLETEARRAY, TypeKind.VECTOR]:
+            result = list()
+            result.append(objc._C_ARY_B)
+            dim = clang_type.element_count
+            if dim is None or int(dim) is None or int(dim) == 0:
+                t = ""
+                s = False
+                element_type = clang_type.element_type
+                if element_type:
+                    t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
+                return objc._C_PTR + t, s
             else:
-                # Declaration can contain nested definitions that are picked
-                # up by other code, ignore those here.
-                pass
+                result.append(str(dim))
 
-    def add_interface(self, node):
+            element_type = clang_type.element_type
+            t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
+            result.append(t)
+            if s:
+                special = True
 
-        if node.name in self.classes:
-            class_info = self.classes[node.name]
+            result.append(objc._C_ARY_E)
+            typestr = ''.join(result)
+
+        # CXType_Vector = 113,
+        elif clang_type.kind == TypeKind.VECTOR:
+            pass  # handled with CONSTANTARRAY above
+
+        # CXType_IncompleteArray = 114,
+        elif clang_type.kind == TypeKind.INCOMPLETEARRAY:
+            pass  # handled with CONSTANTARRAY above
+
+        # CXType_VariableArray = 115,
+        elif clang_type.kind == TypeKind.VARIABLEARRAY:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
+        # CXType_DependentSizedArray = 116,
+        elif clang_type.kind == TypeKind.DEPENDENTSIZEDARRAY:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
+        # CXType_MemberPointer = 117,
+        elif clang_type.kind == TypeKind.MEMBERPOINTER:
+            raise UnsuportedClangOptionError(clang_type.kind)
+
         else:
-            class_info = self.classes[node.name] = {
-                    'name': node.name,
-                    'super': node.super,
-                    'protocols': set(),
-                    'methods': [],
-                    'categories': [],
-                    'properties': [],
-            }
-        class_info['protocols'].update(node.protocol)
+            typedecl = clang_type.get_declaration()
+            assert CursorKind.NO_DECL_FOUND != typedecl.kind, "Couldn't find declaration for non-primitive type"
+            typestr, special = self.__typestr_from_node(typedecl, exogenous_name=exogenous_name)
 
-        cur_visibility='public'
+        return typestr, special
 
-        for decl in node.decls or []:
-            if isinstance(decl, c_ast.Visibility):
-                if decl.kind in ('@public', '@private', '@protected', '@package'):
-                    cur_visibility = decl.kind[1:]
-                else:
-                    raise ValueError(node.kind)
+    __typestr_from_node_ignore = [
+        CursorKind.OBJC_PROTOCOL_DECL,
+        CursorKind.OBJC_INTERFACE_DECL,
+        CursorKind.OBJC_CATEGORY_DECL,
+        CursorKind.OBJC_IMPLEMENTATION_DECL,
+        CursorKind.OBJC_CATEGORY_IMPL_DECL,
+        CursorKind.OBJC_SUPER_CLASS_REF,
+        CursorKind.OBJC_CLASS_REF,
+        CursorKind.OBJC_PROTOCOL_REF, ]
 
-            elif isinstance(decl, c_ast.MethodDecl):
-                meth = self.extract_methoddecl(decl)
-                meth['visibility'] = cur_visibility
-                class_info['methods'].append(meth)
+    __typestr_from_node_use_type = [
+        CursorKind.TYPE_REF,
+        CursorKind.OBJC_CLASS_REF,
+        CursorKind.UNEXPOSED_DECL,
+        CursorKind.INTEGER_LITERAL,
+        CursorKind.FLOATING_LITERAL,
+        CursorKind.STRING_LITERAL,
+        CursorKind.CHARACTER_LITERAL,
+        CursorKind.FIELD_DECL,
+        CursorKind.ENUM_CONSTANT_DECL,
+        CursorKind.FUNCTION_DECL,
+        CursorKind.VAR_DECL,
+        CursorKind.PARM_DECL,
+        CursorKind.OBJC_PROPERTY_DECL,
+        CursorKind.OBJC_IVAR_DECL, ]
 
-            elif isinstance(decl, c_ast.Property):
-                for item in decl.decl:
-                    tc = self.typecodes.typestr(item.type)
-                    class_info['properties'].append({
-                        'name': item.name,
-                        'typestr': tc[0],
-                        'typestr_special': tc[1],
-                        'attributes': decl.attributes,
-                    })
+    #noinspection PyProtectedMember
+    def __typestr_from_node(self, node, exogenous_name=None):
+        """
 
+        @type node: Cursor
+        @param node:
+        @type exogenous_name: str
+        @param exogenous_name:
+        @rtype : ( str, bool )
+        """
+        assert isinstance(node, Cursor)
+
+        special = False
+        typestr = node.objc_type_encoding
+        if typestr != "?" and typestr != "" and typestr is not None:
+            return typestr, special
+
+        # bail out of irrelevant cases
+
+        if node.kind.is_translation_unit() or node.kind.is_attribute() or node.kind.is_invalid() or \
+                node.kind.is_statement() or node.kind in self.__typestr_from_node_ignore:
+            return None, special
+
+        # drill down into the type
+        if node.kind in self.__typestr_from_node_use_type or node.kind.is_expression():
+            clang_type = node.type
+            typestr, special = self.__typestr_from_type(clang_type, exogenous_name=exogenous_name)
+        #follow typedefs
+        elif node.kind == CursorKind.TYPEDEF_DECL:
+            underlying_type = node.underlying_typedef_type
+            typestr, special = self.__typestr_from_type(underlying_type, exogenous_name=exogenous_name)
+        # enums
+        elif node.kind == CursorKind.ENUM_DECL:
+            clang_type = node.enum_type
+            typestr, special = self.__typestr_from_type(clang_type, exogenous_name=exogenous_name)
+        #structs
+        elif node.kind == CursorKind.STRUCT_DECL:
+            result = [objc._C_STRUCT_B]
+            if node.spelling is None or node.spelling == "":
+                if exogenous_name is not None:
+                    result.append('_' + exogenous_name)
+                    assert not exogenous_name.startswith("const"), "Qualifiers leaking into names!"
+                    special = True
             else:
-                # Declaration can contain nested definitions that are picked
-                # up by other code, ignore those here.
-                pass
+                assert not node.spelling.startswith("const"), "Qualifiers leaking into names!"
+                result.append(node.spelling)
 
-    def add_category(self, node):
-        try:
-            class_info = self.classes[node.name]
-        except KeyError:
-            class_info = self.classes[node.name] = {
-                    'name': node.name,
-                    'methods': [],
-                    'protocols': set(),
-                    'properties': [],
-            }
+            result.append('=')
 
-        if node.protocols:
-            class_info['protocols'].update(node.protocols)
-
-        cur_visibility='public'
-
-        for decl in node.decls:
-            if isinstance(decl, c_ast.Visibility):
-                if decl.kind in ('@public', '@private', '@protected', '@package'):
-                    cur_visibility = decl.kind[1:]
+            for c in node.get_children():
+                if c.kind.is_attribute():
+                    continue
+                is_bf = c.is_bitfield()
+                bf_width = -1 if not is_bf else c.get_bitfield_width()
+                if is_bf and bf_width != -1:
+                    result.append('b%d' % (bf_width,))
                 else:
-                    raise ValueError(node.kind)
+                    c_type = c.type
+                    t, s = self.__typestr_from_type(c_type)
+                    if s:
+                        special = True
+                    assert t is not None
 
-            elif isinstance(decl, c_ast.MethodDecl):
-                meth = self.extract_methoddecl(decl)
-                meth['visibility'] = cur_visibility
-                class_info['methods'].append(meth)
+                    result.append(t)
 
-            elif isinstance(decl, c_ast.Property):
-                for item in decl.decl:
-                    tc = self.typecodes.typestr(item.type)
-                    class_info['properties'].append({
-                        'name': item.name,
-                        'typestr': tc[0],
-                        'typestr_special': tc[1],
-                        'attributes': decl.attributes,
-                    })
-
+            result.append(objc._C_STRUCT_E)
+            typestr, special = ''.join(result), special
+        # unions
+        elif node.kind == CursorKind.UNION_DECL:
+            result = [objc._C_UNION_B]
+            if node.spelling is None or node.spelling == "":
+                if exogenous_name is not None:
+                    result.append('_' + exogenous_name)
+                    assert not exogenous_name.startswith("const"), "Qualifiers leaking into names!"
+                    special = True
             else:
-                # Declaration can contain nested definitions that are picked
-                # up by other code, ignore those here.
-                pass
+                assert not node.spelling.startswith("const"), "Qualifiers leaking into names!"
+                result.append(node.spelling)
+
+            result.append('=')
+
+            for c in node.get_children():
+                if c.kind.is_attribute():
+                    continue
+
+                t, s = self.__typestr_from_node(c)
+                if s:
+                    special = True
+                if t is not None:
+                    result.append(t)
+
+            result.append(objc._C_UNION_E)
+            typestr, special = ''.join(result), special
+        else:
+            # try drilling down to canonical
+            canonical = node.canonical
+            if node != canonical:
+                return self.__typestr_from_node(node.canonical, exogenous_name=exogenous_name)
+            else:
+                print ("Unhandled node:", node)
+
+        return typestr, special
 
 
+class UnsuportedClangOptionError(Exception):
+    """
+    Exception for flagging unsupported/un-implemented language constructs.
+
+    """
+    def __init__(self, unsupported_thing=None):
+        self.unsupported_thing = unsupported_thing
 
 
+class DefinitionVisitor (AbstractClangVisitor):
+    """
+    A AbstractClangVisitor that calls back to the framework parser when it
+    locates interesting definitions.
+    """
+    def __init__(self, parser):
+        if parser is None:
+            raise ValueError(parser)
+
+        self._parser = parser
+        # Record all records seen in header files, even
+        # if they are not in a framework we're scanning.
+        # This way we can emit the expected metadata
+        # for "typedef CGRect NSRect" (as used in the Foundation
+        # headers on x86_64)
+        self.__all_structs = {}
+
+    def visit(self, node):
+        if not self._parser.should_process_cursor(node):
+            return
+
+        super(DefinitionVisitor, self).visit(node)
+
+    def visit_var_decl(self, node):
+        linkage = node.linkage
+        if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUEEXTERNAL:
+            self._parser.add_extern(node.spelling, node)
+
+    def visit_enum_decl(self, node):
+        self._parser.add_enumeration(node)
+
+    def visit_struct_decl(self, node):
+        self.descend(node)
+        self.__all_structs[node.type.spelling] = node.type
+
+    def visit_objc_protocol_decl(self, node):
+        self.descend(node)
+        self._parser.add_protocol(node)
+
+    def visit_function_decl(self, node):
+        self._parser.add_function(node)
+
+    def visit_typedef_decl(self, node):
+        self.descend(node)
+
+        typedef_type = node.type
+        typedef_name = typedef_type.spelling
+
+        underlying_type = node.underlying_typedef_type
+        underlying_name = underlying_type.spelling
+
+        # Add typedef to parser
+        self._parser.add_typedef(typedef_name, underlying_name)
+
+        # Ignore typedefs that resolve to function declarations
+        if underlying_type.declaration is not None and underlying_type.declaration.kind == CursorKind.FUNCTION_DECL:
+            return
+
+        if underlying_name in self._parser.cftypes:
+            self._parser.add_alias(typedef_name, underlying_name)
+
+        if underlying_name in self.__all_structs:
+            self._parser.add_struct(typedef_name, self.__all_structs[underlying_name])
+
+        canonical_type = typedef_type.get_canonical()
+        if canonical_type and canonical_type.kind == TypeKind.RECORD:
+            self._parser.add_struct(typedef_name, underlying_type)
+
+        if underlying_type.kind == TypeKind.POINTER:
+            pointee_type = underlying_type.get_pointee()
+            pointee_type_decl = None if not pointee_type else pointee_type.declaration
+            if pointee_type_decl is not None and pointee_type_decl.kind == CursorKind.STRUCT_DECL:
+                if pointee_type_decl.spelling.startswith("__"):
+                    self._parser.add_cftype(typedef_name, typedef_type)
+
+    def visit_objc_category_decl(self, node):
+        self.descend(node)
+
+        self._parser.add_category(node)
+
+        if node.get_is_informal_protocol():
+            self._parser.add_informal_protocol(node)
+
+    def visit_objc_interface_decl(self, node):
+        self.descend(node)
+        self._parser.add_class(node)
+
+    def visit_macro_definition(self, node):
+        macro = node.reconstitute_macro()
+        file_name = "" if node.extent.start.file is None else node.extent.start.file.name
+        self._parser.parse_define(macro, file_name)
 
 
-def iscferrorptr(node):
-    if not isinstance(node, c_ast.PtrDecl):
-        return False
+LINE_RE = re.compile(r'^# \d+ "([^"]*)" ')
+DEFINE_RE = re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$')
+INT_RE = re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$')
+FLOAT_RE = re.compile('^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$')
+STR_RE = re.compile('^"(.*)"$')
+UNICODE_RE = re.compile('^@"(.*)"$')
+UNICODE2_RE = re.compile('^CFSTR\("(.*)"\)$')
+ALIAS_RE = re.compile('^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$')
+NULL_VALUE = re.compile(r'\(\([A-Za-z0-9]+\)NULL\)')
+CALL_VALUE = re.compile(r'^[A-Za-z0-9]+\([A-Za-z0-9]*\)$')
+FUNC_DEFINE_RE = re.compile(r'#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$')
+ERR_SUB_DEFINE_RE = re.compile(r'err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
+ERR_SYSTEM_DEFINE_RE = re.compile(r'err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)')
+SC_SCHEMA_RE = re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
+OR_EXPR_RE = re.compile(r"\([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*\)")
 
-    if not isinstance(node.type, c_ast.TypeDecl):
-        return False
-
-    t = node.type.type
-    if isinstance(t, c_ast.IdentifierType) and t.names[0] == 'CFErrorRef':
-        return True
-
-    return False
-
-
-if __name__ == "__main__":
-    p = FrameworkParser('InputMethodKit', start_header='InputMethodKit/InputMethodKit.h')
-    p.parse()
-
-    import pprint
-    pprint.pprint(p.definitions())
+def debug_break():
+    if False:
+        pass

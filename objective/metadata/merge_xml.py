@@ -1,10 +1,8 @@
 from __future__ import absolute_import
-import sys
-import pprint
 import textwrap
 from xml.etree import ElementTree
-
 from . import storage
+
 
 def bool_attr(node, key, default=False):
     if default:
@@ -12,9 +10,9 @@ def bool_attr(node, key, default=False):
     else:
         default = 'false'
 
-    return (node.get(key, default) == 'true')
+    return node.get(key, default) == 'true'
 
-BOOLEAN_ATTRIBUTES=[
+BOOLEAN_ATTRIBUTES = [
     ("already_retained", False),
     ("already_cfretained", False),
     ("c_array_length_in_result", False),
@@ -25,10 +23,11 @@ BOOLEAN_ATTRIBUTES=[
     ("null_accepted", True),
 ]
 
+
 def typestr2typestr(value):
     # ".bridgesupport" files use "B" for objc._C_NSBOOL and "Z" for
     # objc._C_BOOL, which is different from what's used internally in
-    # the bridge. 
+    # the bridge.
     # Translate a bridgesupport typestring into one used by the bridge
     if value and value[0] in "onN^":
         return value[0] + typestr2typestr(value[1:])
@@ -40,6 +39,7 @@ def typestr2typestr(value):
 
     # TODO: Handle compound types, not needed for now
     return value
+
 
 def merge_xml(exceptions_fn, xml_fn):
     xml = ElementTree.parse(xml_fn)
@@ -57,9 +57,10 @@ def merge_xml(exceptions_fn, xml_fn):
         # for information on how to update this file.
         """), exceptions)
 
+
 def update_functions(exceptions, xml):
-    for funcname, funcdata in exceptions['definitions'].get('functions',{}).items():
-        funcnode = xml.find(".//function[@name='%s']"%(funcname,))
+    for funcname, funcdata in exceptions['definitions'].get('functions', {}).items():
+        funcnode = xml.find(".//function[@name='%s']" % (funcname,))
         if funcnode is None:
             continue
 
@@ -112,7 +113,7 @@ def update_functions(exceptions, xml):
                 argidx += 1
 
             else:
-                raise ValueError("Unexpected child %r of function"%(child.tag,))
+                raise ValueError("Unexpected child %r of function" % (child.tag,))
 
 
 def update_protocols(exceptions, xml, exception_key):
@@ -124,10 +125,11 @@ def update_protocols(exceptions, xml, exception_key):
             if methnode is not None:
                 merge_method_info(method, methnode)
 
+
 def update_cftypes(exceptions, xml):
-    CFATTR=('tollfree', 'comment', 'ignore', 'gettypeid_func')
+    cfattrs = ('tollfree', 'comment', 'ignore', 'gettypeid_func')
     for node in xml.findall('.//cftype'):
-        for attr in CFATTR:
+        for attr in cfattrs:
             if node.get(attr):
                 break
         else:
@@ -141,15 +143,16 @@ def update_cftypes(exceptions, xml):
         except KeyError:
             info = exceptions['definitions']['cftypes'][node.get('name')] = {}
 
-        for attr in CFATTR:
+        for attr in cfattrs:
             v = node.get(attr)
             if v is not None:
                 info[attr] = v
 
+
 def update_classes(exceptions, xml):
     if 0:
         for clsname, clsdata in exceptions['definitions'].get('classes', {}).items():
-            clsnode = xml.find(".//class[@name='%s']"%(clsname,))
+            clsnode = xml.find(".//class[@name='%s']" % (clsname,))
             if clsnode is None:
                 continue
 
@@ -162,7 +165,7 @@ def update_classes(exceptions, xml):
     for clsnode in xml.findall(".//class"):
         clsname = clsnode.get('name')
         if clsname not in defs:
-            clsdata = defs[clsname] = {'methods':[]}
+            clsdata = defs[clsname] = {'methods': []}
         else:
             clsdata = defs[clsname]
 
@@ -182,24 +185,21 @@ def update_classes(exceptions, xml):
                     clsdata['methods'].append(node)
                 except KeyError:
                     clsdata['methods'] = [node]
-            
-
-
-
 
 
 def locate_method(root, selector, class_method):
     if root is None:
         return None
-    meth_nodes = root.findall(".//method[@selector='%s']"%(selector,))
+    meth_nodes = root.findall(".//method[@selector='%s']" % (selector,))
     for methnode in meth_nodes:
         if class_method:
             if methnode.get('class_method', 'false') == 'true':
-               return methnode
+                return methnode
         else:
             if methnode.get('class_method', 'false') == 'false':
                 return methnode
     return None
+
 
 def merge_method_info(method, methnode):
     v = methnode.get('suggestion')
@@ -253,7 +253,7 @@ def parse_argnode(child, info):
 
     for key in ['sel_of_type', 'type']:
         v = child.get(key)
-        v64 = child.get(key+'64')
+        v64 = child.get(key + '64')
 
         if key == 'type':
             key = 'typestr'
@@ -272,7 +272,6 @@ def parse_argnode(child, info):
     if bool_attr(child, 'block'):
         parse_callable(False, child, info)
 
-
     v = child.get('c_array_length_in_arg')
     if v is not None:
         if ',' in v:
@@ -285,8 +284,9 @@ def parse_argnode(child, info):
         if v != default:
             info[key] = v
 
+
 def parse_callable(isfunction, node, dct):
-    if not bool_attr(node, 'function_pointer_retained', 'True'):
+    if not bool_attr(node, 'function_pointer_retained', True):
         dct['callable_retained'] = False
 
     meta = dct['callable'] = {}
@@ -310,7 +310,7 @@ def parse_callable(isfunction, node, dct):
             parse_argnode(child, arguments[idx])
             idx += 1
         else:
-            raise ValueError("Tag '%r' as child of function node"%(child.tag,))
+            raise ValueError("Tag '%r' as child of function node" % (child.tag,))
 
     if meta.get('retval') is None:
         meta['retval'] = {

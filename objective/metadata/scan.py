@@ -1,9 +1,7 @@
 import sys
 import optparse
-import platform
 import os
 import objc
-import pprint
 import time
 import textwrap
 from macholib.MachO import MachO
@@ -13,22 +11,18 @@ from . import parsing
 from . import storage
 
 opt_parser = optparse.OptionParser()
-opt_parser.add_option("-f", "--framework", dest="framework",
-        help="parse framework FRAMEWORK", metavar="FRAMEWORK")
-opt_parser.add_option("--start-header", dest="start_header",
-        help="use '#import <HEADER>' to load the framework", metavar="HEADER")
-opt_parser.add_option("--sdk-root", dest="sdk_root",
-        help="Use the given SDK", metavar="DIR", default="/")
-opt_parser.add_option("--arch", dest="arch",
-        help="Use the given processor architecture", metavar="ARCH", default="x86_64")
-opt_parser.add_option("-o", "--output-file", dest="output",
-        help="Write results to the file", metavar="FILE")
-opt_parser.add_option("-e", "--exceptions-file", dest="exceptions",
-        help="Write exceptions to the file", metavar="FILE")
+opt_parser.add_option("-f", "--framework", dest="framework", help="parse framework FRAMEWORK", metavar="FRAMEWORK")
+opt_parser.add_option("--start-header", dest="start_header", help="use '#import <HEADER>' to load the framework",
+                      metavar="HEADER")
+opt_parser.add_option("--sdk-root", dest="sdk_root", help="Use the given SDK", metavar="DIR", default="/")
+opt_parser.add_option("--arch", dest="arch", help="Use the given processor architecture", metavar="ARCH",
+                      default="x86_64")
+opt_parser.add_option("-o", "--output-file", dest="output", help="Write results to the file", metavar="FILE")
+opt_parser.add_option("-e", "--exceptions-file", dest="exceptions", help="Write exceptions to the file", metavar="FILE")
 opt_parser.add_option("--pre-header", dest="preheaders", default=[], action="append",
-        help="Include header before including framework headers", metavar="HEADER")
+                      help="Include header before including framework headers", metavar="HEADER")
 opt_parser.add_option("--extra-header", dest="extraheaders", default=[], action="append",
-        help="Include header after including the main framework header", metavar="HEADER")
+                      help="Include header after including the main framework header", metavar="HEADER")
 
 
 def macho_archs(filename):
@@ -67,11 +61,13 @@ def locate_method(lst, sel):
             return item
     return None
 
+
 def locate_property(lst, name):
     for item in lst:
         if item['name'] == name:
             return item
     return None
+
 
 def merge_exceptions(current, updates):
     for funcname, funcdata in updates['definitions']['functions'].items():
@@ -102,22 +98,23 @@ def merge_exceptions(current, updates):
 
     return current
 
-def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch, link_framework, only_headers, typemap):
+
+def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, extraheaders, sdk_root, arch,
+                 link_framework, only_headers, typemap, min_deploy, verbose=False):
     if start_header is None:
         path = objc.dyld_framework('Headers', framework)
 
         file_archs = macho_archs(path)
         if arch not in file_archs:
-            print >>sys.stderr, "Framework %r not available for arch %r"%(
-                    framework, arch)
+            print >>sys.stderr, "Framework %r not available for arch %r" % (framework, arch)
             sys.exit(1)
 
         path = framework_path = os.path.dirname(path)
-        path =  os.path.join(sdk_root, path[1:], 'Headers')
+        path = os.path.join(sdk_root, path[1:], 'Headers')
         if not os.path.exists(path):
             print framework_path
             if not os.path.exists(os.path.join(sdk_root, framework_path[1:])):
-                path =  os.path.join(framework_path, 'Headers')
+                path = os.path.join(framework_path, 'Headers')
                 if not os.path.exists(path):
                     print >>sys.stderr, "Framework without headers[2]"
                     sys.exit(1)
@@ -128,26 +125,26 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
 
         files = os.listdir(path)
         if len(files) == 1:
-            start_header = '%s/%s'%(framework, files[0])
+            start_header = '%s/%s' % (framework, files[0])
 
         else:
             if framework + '.h' not in files:
-                print >>sys.stderr, "Framework doesn't have a central header <%s/%s.h>"%(
-                        framework, framework)
+                print >>sys.stderr, "Framework doesn't have a central header <%s/%s.h>" % (framework, framework)
                 sys.exit(1)
 
     prs = parsing.FrameworkParser(
-            framework, 
-            start_header=start_header,
-            sdk=sdk_root,
-            arch=arch,
-            preheaders=preheaders,
-            extraheaders=extraheaders,
-            link_framework=link_framework,
-            only_headers=only_headers,
-            typemap=typemap,
-        )
-            
+        framework,
+        start_header=start_header,
+        sdk=sdk_root,
+        arch=arch,
+        preheaders=preheaders,
+        extraheaders=extraheaders,
+        link_framework=link_framework,
+        only_headers=only_headers,
+        typemap=typemap,
+        min_deploy=min_deploy,
+        verbose=verbose, )
+
     prs.parse()
 
     if not os.path.exists(os.path.dirname(raw_fn)):
@@ -155,19 +152,18 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
 
     cur_time = time.ctime()
     storage.save_framework_info(raw_fn, textwrap.dedent("""\
-        #             GENERATED FILE DO NOT EDIT
-        #
-        # This file was generated by objective.metadata
-        # Last update: %s
-        """)%(cur_time,), prs.definitions())
+        //             GENERATED FILE DO NOT EDIT
+        //
+        // This file was generated by objective.metadata
+        // Last update: %s
+        """) % (cur_time,), prs.definitions())
 
-
-    new_exceptions = prs.exceptions()
+    new_exceptions = prs.exceptions
     if os.path.exists(exceptions_fn):
-        cur_exceptions = storage.load_framework_info(exceptions_fn)
+        cur_exceptions = storage.load_framework_info(exceptions_fn, verbose=verbose)
         new_exceptions = merge_exceptions(cur_exceptions, new_exceptions)
 
     storage.save_framework_info(exceptions_fn, textwrap.dedent("""\
-        # objective.metada exceptions file, see its document
-        # for information on how to update this file.
-        """), new_exceptions)
+        // objective.metadata exceptions file, see its document
+        // for information on how to update this file.
+        """), new_exceptions, verbose=verbose)
