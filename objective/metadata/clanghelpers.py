@@ -402,7 +402,7 @@ Type.ever_passes_test = _type_ever_passes_test
 
 
 def _type_ever_defines_to(self, type_name):
-    return self.ever_passes_test(lambda x: (x.spelling == type_name or
+    return self.ever_passes_test(lambda x: (getattr(x, 'spelling', '') == type_name or
                                            (x.declaration and x.declaration.spelling == type_name)))
 
 
@@ -557,7 +557,7 @@ Cursor.get_category_class_cursor = _cursor_get_category_class_cursor
 
 def _cursor_get_category_class_name(self):
     category_class_cursor = self.get_category_class_cursor()
-    return None if category_class_cursor is None else category_class_cursor.type.spelling
+    return None if category_class_cursor is None else getattr(category_class_cursor.type, 'spelling', None)
 
 
 Cursor.get_category_class_name = _cursor_get_category_class_name

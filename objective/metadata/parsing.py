@@ -2,13 +2,15 @@
 Utility module for parsing the header files in a framework and extracting
 interesting definitions.
 """
+from __future__ import print_function
 import os
 import platform
 import re
 import sys
 import objc
 
-from clang.cindex import Index, Cursor, CursorKind, Type, TypeKind, TranslationUnit, TranslationUnitLoadError
+from clang.cindex import Config, Index, Cursor, CursorKind, Type, TypeKind, TranslationUnit, TranslationUnitLoadError
+Config.set_library_path('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/')
 from objective.metadata.clanghelpers import ObjcDeclQualifier, AbstractClangVisitor, LinkageKind
 
 
@@ -366,7 +368,7 @@ class FrameworkParser(object):
                 assert ts
 
                 if '?' in ts:
-                    #print "Skip %s: contains function pointers"%(name,)
+                    #print("Skip %s: contains function pointers"%(name,))
                     return
 
         self.structs[name] = {
@@ -376,7 +378,7 @@ class FrameworkParser(object):
         }
 
         if self.verbose:
-            print("Added struct: " + name)
+            print("Added struct: ", name)
 
     def add_extern(self, name, node):
         node_type = node.type
@@ -397,7 +399,7 @@ class FrameworkParser(object):
     def add_function(self, node):
         name = node.spelling
         if 'CFBundleGetFunctionPointersForNames' in name:
-            print ("stop")
+            print("stop")
         if name.startswith('__'):
             return
 
@@ -640,7 +642,7 @@ class FrameworkParser(object):
         class_cursor = node.get_category_class_cursor().referenced
         class_name = class_cursor.referenced.spelling
         if (class_name or "") == "":
-            print ("s")
+            print("s")
 
         if class_name in self.classes:
             class_info = self.classes[class_name]
@@ -697,7 +699,7 @@ class FrameworkParser(object):
             if self.only_headers:
                 if os.path.basename(curfile) not in self.only_headers:
                     if curfile and 'NSSimpleHorizontalTypesetter' in curfile:
-                        print "skip", curfile
+                        print("skip", curfile)
                     continue
 
             m = DEFINE_RE.match(ln)
@@ -710,7 +712,7 @@ class FrameworkParser(object):
                 value = m.group(2)
                 if value.endswith('\\'):
                     # Complex macro, ignore
-                    print "IGNORE", repr(key), repr(value)
+                    print("IGNORE", repr(key), repr(value))
                     continue
 
                 value = value.strip()
@@ -862,7 +864,7 @@ class FrameworkParser(object):
                         print("Added expressions name: " + key + " value: " + str(self.expressions[key]))
                     continue
 
-                print "Warning: ignore #define %r %r" % (key, value)
+                print("Warning: ignore #define %r %r" % (key, value))
 
             m = FUNC_DEFINE_RE.match(ln)
             if m is not None:
@@ -902,7 +904,7 @@ class FrameworkParser(object):
 
         node = node.get_pointee()
 
-        if node.spelling == "CFErrorRef":
+        if getattr(node, 'spelling', None) == "CFErrorRef":
             return True
 
         return False
@@ -1187,7 +1189,7 @@ class FrameworkParser(object):
         elif clang_type.kind == TypeKind.RECORD:
             typedecl = clang_type.get_declaration()
             assert CursorKind.NO_DECL_FOUND != typedecl.kind, "Couldn't find declaration for non-primitive type"
-            exogenous_name = exogenous_name if exogenous_name else typedecl.type.spelling
+            exogenous_name = exogenous_name if exogenous_name else getattr(typedecl.type, 'spelling', None)
             typestr, special = self.__typestr_from_node(typedecl, exogenous_name=exogenous_name)
 
         # CXType_Enum = 106,
@@ -1430,7 +1432,7 @@ class FrameworkParser(object):
             if node != canonical:
                 return self.__typestr_from_node(node.canonical, exogenous_name=exogenous_name)
             else:
-                print ("Unhandled node:", node)
+                print("Unhandled node:", node)
 
         return typestr, special
 
@@ -1477,7 +1479,7 @@ class DefinitionVisitor (AbstractClangVisitor):
 
     def visit_struct_decl(self, node):
         self.descend(node)
-        self.__all_structs[node.type.spelling] = node.type
+        self.__all_structs[getattr(node.type, 'spelling', None)] = node.type
 
     def visit_objc_protocol_decl(self, node):
         self.descend(node)
@@ -1490,10 +1492,10 @@ class DefinitionVisitor (AbstractClangVisitor):
         self.descend(node)
 
         typedef_type = node.type
-        typedef_name = typedef_type.spelling
+        typedef_name = getattr(typedef_type, 'spelling', None)
 
         underlying_type = node.underlying_typedef_type
-        underlying_name = underlying_type.spelling
+        underlying_name = getattr(underlying_type, 'spelling', None)
 
         # Add typedef to parser
         self._parser.add_typedef(typedef_name, underlying_name)

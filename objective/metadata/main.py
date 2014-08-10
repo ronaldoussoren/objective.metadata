@@ -120,6 +120,7 @@ def parse_ini(ini_file, ini_sections):
 def path_for_sdk_version(version):
     with open(os.devnull, 'a') as dn:
         out = subprocess.check_output(["xcodebuild", "-version", "-sdk", "macosx%s" % (version,), "Path"], stderr=dn)
+        print(out)
         return out.strip()
 
 
@@ -142,9 +143,11 @@ def sdk_ver_from_path(path):
 def main():
     args = parser.parse_args()
 
-    if args.libclang:
+    if getattr(args, 'libclang', None):
         import clang.cindex
         clang.cindex.Config.set_library_file(args.libclang)
+
+    # XXX: else: use libclang from default Xcode
 
     for info in parse_ini(args.ini_file, args.ini_section):
         if args.command == "scan":

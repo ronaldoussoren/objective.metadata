@@ -116,7 +116,7 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
             if not os.path.exists(os.path.join(sdk_root, framework_path[1:])):
                 path = os.path.join(framework_path, 'Headers')
                 if not os.path.exists(path):
-                    print >>sys.stderr, "Framework without headers[2]"
+                    print >>sys.stderr, "Framework without headers[2]", os.path.join(sdk_root, framework_path[1:])
                     sys.exit(1)
 
             else:
