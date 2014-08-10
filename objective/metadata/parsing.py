@@ -1492,7 +1492,7 @@ class DefinitionVisitor (AbstractClangVisitor):
         self.descend(node)
 
         typedef_type = node.type
-        typedef_name = getattr(typedef_type, 'spelling', None)
+        typedef_name = typedef_type.declaration.spelling
 
         underlying_type = node.underlying_typedef_type
         underlying_name = getattr(underlying_type, 'spelling', None)
