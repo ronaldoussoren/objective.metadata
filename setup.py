@@ -1,10 +1,3 @@
-try:
-    import setuptools
-
-except ImportError:
-    import distribute_setup
-    distribute_setup.use_setuptools()
-
 from setuptools import setup
 
 setup(
@@ -15,14 +8,14 @@ setup(
 
         This package provides tools for extracting definitions from
         Objective-C header files that cannot be extracted from the
-        Objective-C runtime. 
+        Objective-C runtime.
     """,
     install_requires=['pyobjc-core', 'macholib>=1.4.3'],
     license='MIT',
     version='0.1',
     author='Ronald Oussoren',
     author_email='ronald.oussoren@mac.com',
-    url='https://bitbucket.org/ronaldoussoren/objective.metadata',
+    url='https://github.com/ronaldoussoren/objective.metadata',
     platforms='MacOSX',
     namespace_packages = ['objective'],
     packages=['objective', 'objective.metadata'],
