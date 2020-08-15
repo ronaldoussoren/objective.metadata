@@ -33,7 +33,13 @@ def _decode_object(pairs):
         if k.isdigit():
             result[int(k)] = v
 
-        elif k in { "type", "typestr", "type_override", "typestr_override", "sel_of_type" }:
+        elif k in {
+            "type",
+            "typestr",
+            "type_override",
+            "typestr_override",
+            "sel_of_type",
+        }:
             result[k] = v.encode()
 
         else:
@@ -45,11 +51,14 @@ def save_framework_info(filename, header, data, verbose=False):
     if verbose:
         print("Writing framework info to: " + filename)
 
-    with open(filename, 'w') as fp:
+    with open(filename, "w") as fp:
         fp.write(header)
         json.dump(data, fp, sort_keys=True, indent=1, default=_encode_default)
 
-__javascript_comment_re = re.compile('(^)?[^\S\n]*/(?:\*(.*?)\*/[^\S\n]*|/[^\n]*)($)?', re.DOTALL | re.MULTILINE)
+
+__javascript_comment_re = re.compile(
+    "(^)?[^\S\n]*/(?:\*(.*?)\*/[^\S\n]*|/[^\n]*)($)?", re.DOTALL | re.MULTILINE
+)
 
 
 def load_framework_info(filename, verbose=False):
@@ -59,14 +68,14 @@ def load_framework_info(filename, verbose=False):
         data = fp.read()
 
         # Get rid of the bogus hash comments
-        while data.startswith('#'):
-            _, data = data.split('\n', 1)
+        while data.startswith("#"):
+            _, data = data.split("\n", 1)
 
         # Get rid of "real" JS comments
         match = __javascript_comment_re.search(data)
         while match:
             # single line comment
-            data = data[:match.start()] + data[match.end():]
+            data = data[: match.start()] + data[match.end() :]
             match = __javascript_comment_re.search(data)
 
         # Then hand it to the intolerand JSON parser

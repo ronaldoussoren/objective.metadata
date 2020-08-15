@@ -6,14 +6,14 @@ I realize that my "categories" on the libclang python classes are more Obj-C-ish
 than "pythonic" but, hey, I'm an ObjC developer first...
 """
 
-import clang
-import objc
 import collections
-from clang.cindex import Cursor, CursorKind, Type, TypeKind, SourceRange
 import os
+from ctypes import c_int, c_uint
 from itertools import chain
 
-from ctypes import c_int, c_uint
+import clang
+import objc
+from clang.cindex import Cursor, CursorKind, SourceRange, Type, TypeKind
 
 # Add missing bindings...
 CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
@@ -24,21 +24,37 @@ CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
 CursorKind.FLAGENUM_ATTR = CursorKind(437)
 
 
-
-
 # Add ctypes wrappers for a bunch of functions not yet added to the real libclang python binding.
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_Cursor_isObjCOptional", [Cursor], c_uint), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_getCXXAccessSpecifier", [Cursor], c_int), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_Cursor_isVariadic", [Cursor], c_uint), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_Cursor_getObjCDeclQualifiers", [Cursor], c_uint), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_Cursor_getObjCPropertyAttributes",
-                                                       [Cursor, c_uint], c_uint), False)
-clang.cindex.register_function(clang.cindex.conf.lib, ("clang_getCursorResultType", [Cursor],
-                                                       Type, Type.from_result), False)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_Cursor_isObjCOptional", [Cursor], c_uint), False
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_getCXXAccessSpecifier", [Cursor], c_int), False
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_Cursor_isVariadic", [Cursor], c_uint), False
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib,
+    ("clang_Cursor_getObjCDeclQualifiers", [Cursor], c_uint),
+    False,
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib,
+    ("clang_Cursor_getObjCPropertyAttributes", [Cursor, c_uint], c_uint),
+    False,
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib,
+    ("clang_getCursorResultType", [Cursor], Type, Type.from_result),
+    False,
+)
 
-#objc module was missing this:
-objc._C_BYREF = 'R'
+# objc module was missing this:
+objc._C_BYREF = "R"
 
 ###
 # A Class to hold qualifiers
@@ -53,7 +69,7 @@ class ObjcDeclQualifier(object):
     Flag_Bycopy = 0x8
     Flag_Byref = 0x10
     Flag_Oneway = 0x20
-    #noinspection PyProtectedMember
+    # noinspection PyProtectedMember
     __val_to_encode_string = {
         Flag_In: objc._C_IN,
         Flag_InOut: objc._C_INOUT,
@@ -196,6 +212,7 @@ class LinkageKind(object):
     """
     A class to hold linkage specifiers.
     """
+
     INVALID = 0
     NOLINKAGE = 1
     INTERNAL = 2
@@ -210,7 +227,7 @@ class LinkageKind(object):
         if value >= len(LinkageKind._kinds):
             LinkageKind._kinds += [None] * (value - len(LinkageKind._kinds) + 1)
         if LinkageKind._kinds[value] is not None:
-            raise ValueError('LinkageKind already loaded')
+            raise ValueError("LinkageKind already loaded")
         self.value = value
         self._name_map = dict()
         LinkageKind._kinds[value] = self
@@ -231,12 +248,16 @@ class LinkageKind(object):
 
     @staticmethod
     def from_id(linkage_id):
-        if linkage_id >= len(LinkageKind._kinds) or LinkageKind._kinds[linkage_id] is None:
-            raise ValueError('Unknown type kind %d' % (linkage_id,))
+        if (
+            linkage_id >= len(LinkageKind._kinds)
+            or LinkageKind._kinds[linkage_id] is None
+        ):
+            raise ValueError("Unknown type kind %d" % (linkage_id,))
         return LinkageKind._kinds[linkage_id]
 
     def __repr__(self):
-        return 'LinkageKind.%s' % (self.name,)
+        return "LinkageKind.%s" % (self.name,)
+
 
 # I was stupidly following the libclang enum pattern when I made this...
 LinkageKind.INVALID = LinkageKind(0)
@@ -252,7 +273,7 @@ class AbstractClangVisitor(object):
     ###
 
     def visitor_function_for_cursor(self, cursor):
-        method_name = 'visit_' + cursor.kind.name.lower()
+        method_name = "visit_" + cursor.kind.name.lower()
         method = getattr(self, method_name, None)
         if method is None:
             method = self.descend
@@ -265,6 +286,7 @@ class AbstractClangVisitor(object):
     def descend(self, cursor):
         for c in cursor.get_children():
             self.visit(c)
+
 
 ###
 # Additions to clang.cindex.Type
@@ -334,8 +356,9 @@ def _type_argument_types(self):
                 raise IndexError("Only non-negative indexes are accepted.")
 
             if key >= len(self):
-                raise IndexError("Index greater than container length: "
-                                 "%d > %d" % (key, len(self)))
+                raise IndexError(
+                    "Index greater than container length: " "%d > %d" % (key, len(self))
+                )
 
             result = clang.cindex.conf.lib.clang_getArgType(self.parent, key)
             if result.kind == TypeKind.INVALID:
@@ -345,12 +368,13 @@ def _type_argument_types(self):
 
     return ArgumentsIterator(self)
 
+
 Type.argument_types = _type_argument_types
 
 
 def _type_is_function_variadic(self):
     """Determine whether this function Type is a variadic function type."""
-    #assert self.kind == TypeKind.FUNCTIONPROTO
+    # assert self.kind == TypeKind.FUNCTIONPROTO
     return clang.cindex.conf.lib.clang_isFunctionTypeVariadic(self)
 
 
@@ -395,7 +419,9 @@ Type.pointee = property(fget=_type_pointee)
 # Move that property over from Cursor to Type, then replace the Cursor implementation later
 Type.result_type = Cursor.result_type
 
-Type.valid_type = property(fget=lambda self: None if self.kind == TypeKind.INVALID else self)
+Type.valid_type = property(
+    fget=lambda self: None if self.kind == TypeKind.INVALID else self
+)
 
 
 def _type_ever_passes_test(self, pred):
@@ -414,8 +440,12 @@ Type.ever_passes_test = _type_ever_passes_test
 
 
 def _type_ever_defines_to(self, type_name):
-    return self.ever_passes_test(lambda x: (getattr(x, 'spelling', '') == type_name or
-                                           (x.declaration and x.declaration.spelling == type_name)))
+    return self.ever_passes_test(
+        lambda x: (
+            getattr(x, "spelling", "") == type_name
+            or (x.declaration and x.declaration.spelling == type_name)
+        )
+    )
 
 
 Type.ever_defines_to = _type_ever_defines_to
@@ -448,17 +478,17 @@ def _type_element_count(self):
 
     return result
 
+
 setattr(Type, "element_count", property(fget=_type_element_count))
 
 ###
 # Additions to clang.cindex.TypeKind
 ###
 
-#noinspection PyProtectedMember
+# noinspection PyProtectedMember
 __typekind_to_objc_types_map_common = {
     # The comments are the list of Clang's "built-ins"
     # Not sure what to do about some of the more esoteric ones
-
     # CXType_Void = 2,
     TypeKind.VOID: objc._C_VOID,
     # CXType_Bool = 3,
@@ -478,7 +508,7 @@ __typekind_to_objc_types_map_common = {
     # CXType_ULongLong = 11,
     TypeKind.ULONGLONG: objc._C_ULNGLNG,
     # CXType_UInt128 = 12,
-    TypeKind.UINT128: 'T',  # determined empirically
+    TypeKind.UINT128: "T",  # determined empirically
     # CXType_Char_S = 13,
     TypeKind.CHAR_S: objc._C_CHR,
     # CXType_SChar = 14,
@@ -492,13 +522,13 @@ __typekind_to_objc_types_map_common = {
     # CXType_LongLong = 19,
     TypeKind.LONGLONG: objc._C_LNGLNG,
     # CXType_Int128 = 20,
-    TypeKind.INT128: 't',  # determined empirically
+    TypeKind.INT128: "t",  # determined empirically
     # CXType_Float = 21,
     TypeKind.FLOAT: objc._C_FLT,
     # CXType_Double = 22,
     TypeKind.DOUBLE: objc._C_DBL,
     # CXType_LongDouble = 23,
-    TypeKind.LONGDOUBLE: 'D',  # determined empirically
+    TypeKind.LONGDOUBLE: "D",  # determined empirically
     # CXType_NullPtr = 24,
     # CXType_Overload = 25,
     # CXType_Dependent = 26,
@@ -512,7 +542,7 @@ __typekind_to_objc_types_map_common = {
     TypeKind.BLOCKPOINTER: objc._C_ID + objc._C_UNDEF,
 }
 
-#noinspection PyProtectedMember
+# noinspection PyProtectedMember
 __typekind_to_objc_types_map_64 = {
     # CXType_ULong = 10,
     TypeKind.ULONG: objc._C_ULNG_LNG,
@@ -520,7 +550,7 @@ __typekind_to_objc_types_map_64 = {
     TypeKind.LONG: objc._C_LNG_LNG,
 }
 
-#noinspection PyProtectedMember
+# noinspection PyProtectedMember
 __typekind_to_objc_types_map_32 = {
     # CXType_ULong = 10,
     TypeKind.ULONG: objc._C_ULNG,
@@ -529,10 +559,30 @@ __typekind_to_objc_types_map_32 = {
 }
 
 __typekind_by_arch_map = {
-    "arm64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
-    "x86_64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
-    "ppc64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
-    "i386": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_32.items())),
+    "arm64": dict(
+        chain(
+            __typekind_to_objc_types_map_common.items(),
+            __typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "x86_64": dict(
+        chain(
+            __typekind_to_objc_types_map_common.items(),
+            __typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "ppc64": dict(
+        chain(
+            __typekind_to_objc_types_map_common.items(),
+            __typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "i386": dict(
+        chain(
+            __typekind_to_objc_types_map_common.items(),
+            __typekind_to_objc_types_map_32.items(),
+        )
+    ),
 }
 
 
@@ -542,6 +592,7 @@ def _typekind_objc_type_for_arch(self, arch):
     assert typekind_by_arch_map is not None
     typekind = typekind_by_arch_map.get(self)
     return typekind
+
 
 TypeKind.objc_type_for_arch = _typekind_objc_type_for_arch
 
@@ -559,7 +610,10 @@ def _cursor_get_category_class_cursor(self):
         first_child_cursor = child
         break
 
-    if first_child_cursor is None or first_child_cursor.kind != CursorKind.OBJC_CLASS_REF:
+    if (
+        first_child_cursor is None
+        or first_child_cursor.kind != CursorKind.OBJC_CLASS_REF
+    ):
         return None
 
     return first_child_cursor
@@ -570,19 +624,32 @@ Cursor.get_category_class_cursor = _cursor_get_category_class_cursor
 
 def _cursor_get_category_class_name(self):
     category_class_cursor = self.get_category_class_cursor()
-    return None if category_class_cursor is None else getattr(category_class_cursor.type, 'spelling', None)
+    return (
+        None
+        if category_class_cursor is None
+        else getattr(category_class_cursor.type, "spelling", None)
+    )
 
 
 Cursor.get_category_class_name = _cursor_get_category_class_name
 
-Cursor.get_category_name = lambda self: None if self.kind != CursorKind.OBJC_CATEGORY_DECL else self.spelling
+Cursor.get_category_name = (
+    lambda self: None if self.kind != CursorKind.OBJC_CATEGORY_DECL else self.spelling
+)
 
-Cursor.get_is_informal_protocol = lambda self: False if self.kind != CursorKind.OBJC_CATEGORY_DECL else (
-    self.get_category_class_name() == "NSObject" or "Delegate" in self.spelling)
+Cursor.get_is_informal_protocol = (
+    lambda self: False
+    if self.kind != CursorKind.OBJC_CATEGORY_DECL
+    else (self.get_category_class_name() == "NSObject" or "Delegate" in self.spelling)
+)
 
 
 def _cursor_get_adopted_protocol_nodes(self):
-    if self.kind not in [CursorKind.OBJC_CATEGORY_DECL, CursorKind.OBJC_INTERFACE_DECL, CursorKind.OBJC_PROTOCOL_DECL]:
+    if self.kind not in [
+        CursorKind.OBJC_CATEGORY_DECL,
+        CursorKind.OBJC_INTERFACE_DECL,
+        CursorKind.OBJC_PROTOCOL_DECL,
+    ]:
         return None
 
     protocols = list()
@@ -595,7 +662,9 @@ def _cursor_get_adopted_protocol_nodes(self):
 
 Cursor.get_adopted_protocol_nodes = _cursor_get_adopted_protocol_nodes
 
-Cursor.token_string = property(fget=lambda self: ''.join([token.spelling for token in self.get_tokens()]))
+Cursor.token_string = property(
+    fget=lambda self: "".join([token.spelling for token in self.get_tokens()])
+)
 
 
 def _sourcerange_get_raw_contents(self):
@@ -664,9 +733,9 @@ def _cursor_get_first_child(self):
         holder.append(child)
         return 0  # CXChildVisit_Break
 
-    clang.cindex.conf.lib.clang_visitChildren(self,
-                                              clang.cindex.callbacks['cursor_visit'](first_child_visitor),
-                                              child_holder)
+    clang.cindex.conf.lib.clang_visitChildren(
+        self, clang.cindex.callbacks["cursor_visit"](first_child_visitor), child_holder
+    )
 
     return None if len(child_holder) == 0 else child_holder[0]
 
@@ -701,7 +770,7 @@ def _cursor_get_property_attributes(self):
             attrs.add(attr)
 
     if "getter" in attrs or "setter" in attrs:
-        for string in self.objc_type_encoding.split(','):
+        for string in self.objc_type_encoding.split(","):
             if string.startswith("G"):
                 attrs.remove("getter")
                 attrs.add(("getter", string[1:]))
@@ -714,24 +783,44 @@ def _cursor_get_property_attributes(self):
 
 Cursor.get_property_attributes = _cursor_get_property_attributes
 
-Cursor.canonical_distinct = property(fget=lambda self: None if self == self.canonical else self.canonical)
+Cursor.canonical_distinct = property(
+    fget=lambda self: None if self == self.canonical else self.canonical
+)
 Cursor.referenced_distinct = property(
-    fget=lambda self: None if ((not self.referenced) or self == self.referenced) else self.referenced)
-Cursor.linkage = property(fget=lambda self: LinkageKind.from_id(clang.cindex.conf.lib.clang_getCursorLinkage(self)))
-Cursor.is_virtual = property(fget=lambda self: clang.cindex.conf.lib.clang_CXXMethod_isVirtual(self))
+    fget=lambda self: None
+    if ((not self.referenced) or self == self.referenced)
+    else self.referenced
+)
+Cursor.linkage = property(
+    fget=lambda self: LinkageKind.from_id(
+        clang.cindex.conf.lib.clang_getCursorLinkage(self)
+    )
+)
+Cursor.is_virtual = property(
+    fget=lambda self: clang.cindex.conf.lib.clang_CXXMethod_isVirtual(self)
+)
 Cursor.is_optional_for_protocol = property(
-    fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isObjCOptional(self)))
-Cursor.is_variadic = property(fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isVariadic(self)))
-Cursor.type_valid = property(fget=lambda self: None if self.type.kind == TypeKind.INVALID else self.type)
+    fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isObjCOptional(self))
+)
+Cursor.is_variadic = property(
+    fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isVariadic(self))
+)
+Cursor.type_valid = property(
+    fget=lambda self: None if self.type.kind == TypeKind.INVALID else self.type
+)
 Cursor.result_type_valid = property(
-    fget=lambda self: None if self.result_type.kind == TypeKind.INVALID else self.result_type)
+    fget=lambda self: None
+    if self.result_type.kind == TypeKind.INVALID
+    else self.result_type
+)
 
 
 def _cursor_result_type(self):
     # See note above;  Yes, we are *replacing* the implementation of result_type from libclang
-    if not hasattr(self, '_result_type'):
+    if not hasattr(self, "_result_type"):
         self._result_type = clang.cindex.conf.lib.clang_getCursorResultType(self)
     return self._result_type
+
 
 setattr(Cursor, "result_type", property(fget=_cursor_result_type))
 
@@ -743,7 +832,11 @@ def _cursor_get_access_specifier(self):
         return None
 
     walker = self
-    while walker and walker.kind != CursorKind.OBJC_INTERFACE_DECL and walker.kind != CursorKind.OBJC_CATEGORY_DECL:
+    while (
+        walker
+        and walker.kind != CursorKind.OBJC_INTERFACE_DECL
+        and walker.kind != CursorKind.OBJC_CATEGORY_DECL
+    ):
         walker = walker.semantic_parent
 
     interface_decl = walker
@@ -779,26 +872,40 @@ def _cursor_reconstitute_macro(self):
 
     last_token = None
     for token in tokens:
-        if last_token and (token.extent.start.offset - last_token.extent.end.offset) >= 1:
+        if (
+            last_token
+            and (token.extent.start.offset - last_token.extent.end.offset) >= 1
+        ):
             string += " "
-        if token.extent.start.offset >= min_offset and token.extent.end.offset <= max_offset:
+        if (
+            token.extent.start.offset >= min_offset
+            and token.extent.end.offset <= max_offset
+        ):
             string += token.spelling
         last_token = token
 
-    return string.rstrip(' ')
+    return string.rstrip(" ")
+
 
 Cursor.reconstitute_macro = _cursor_reconstitute_macro
 
 
 def _cursor_get_objc_decl_qualifiers(self):
-    if self.kind not in [CursorKind.OBJC_CLASS_METHOD_DECL, CursorKind.OBJC_INSTANCE_METHOD_DECL, CursorKind.PARM_DECL]:
+    if self.kind not in [
+        CursorKind.OBJC_CLASS_METHOD_DECL,
+        CursorKind.OBJC_INSTANCE_METHOD_DECL,
+        CursorKind.PARM_DECL,
+    ]:
         return None
     val = clang.cindex.conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
     return ObjcDeclQualifier(val)
 
+
 Cursor.objc_decl_qualifiers = property(fget=_cursor_get_objc_decl_qualifiers)
 
-Cursor.underlying_typedef_type_valid = property(fget=lambda self: self.underlying_typedef_type.valid_type)
+Cursor.underlying_typedef_type_valid = property(
+    fget=lambda self: self.underlying_typedef_type.valid_type
+)
 
 
 def _cursor_enum_value(self):
@@ -807,25 +914,34 @@ def _cursor_enum_value(self):
     @return:
     @rtype: int
     """
-    if not hasattr(self, '_enum_value'):
+    if not hasattr(self, "_enum_value"):
         assert self.kind == CursorKind.ENUM_CONSTANT_DECL
         # Figure out the underlying type of the enum to know if it
         # is a signed or unsigned quantity.
         underlying_type = self.type.get_canonical()
         if underlying_type.kind == TypeKind.ENUM:
-            underlying_type = underlying_type.get_declaration().enum_type.get_canonical()
-        if underlying_type.kind in (TypeKind.CHAR_U,
-                                    TypeKind.UCHAR,
-                                    TypeKind.CHAR16,
-                                    TypeKind.CHAR32,
-                                    TypeKind.USHORT,
-                                    TypeKind.UINT,
-                                    TypeKind.ULONG,
-                                    TypeKind.ULONGLONG,
-                                    TypeKind.UINT128):
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclUnsignedValue(self)
+            underlying_type = (
+                underlying_type.get_declaration().enum_type.get_canonical()
+            )
+        if underlying_type.kind in (
+            TypeKind.CHAR_U,
+            TypeKind.UCHAR,
+            TypeKind.CHAR16,
+            TypeKind.CHAR32,
+            TypeKind.USHORT,
+            TypeKind.UINT,
+            TypeKind.ULONG,
+            TypeKind.ULONGLONG,
+            TypeKind.UINT128,
+        ):
+            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclUnsignedValue(
+                self
+            )
         else:
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclValue(self)
+            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclValue(
+                self
+            )
     return self._enum_value
+
 
 setattr(Cursor, "enum_value", property(fget=_cursor_enum_value))
