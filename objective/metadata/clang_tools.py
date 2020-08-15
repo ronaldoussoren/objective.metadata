@@ -34,7 +34,12 @@ class FilteredVisitor(NodeVisitor):
 def dump_type(node, indent=""):
     print(indent + node.kind.name, node.is_pod())
     print(indent + node.spelling)
+    print(indent + "nullability: " + str(node.nullability))
     print(indent + "argument_types:", list(node.argument_types()))
+    try:
+        print(indent + "availability:", node.availability)
+    except AttributeError:
+        pass
     # dump_type(node.argument_types(), indent + '  ')
     # print(indent + "element_count:", node.element_count)
     # print(indent + "element_type:", node.element_type)

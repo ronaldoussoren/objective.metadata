@@ -13,7 +13,15 @@ from itertools import chain
 
 import clang
 import objc
-from clang.cindex import Cursor, CursorKind, SourceRange, Type, TypeKind
+from clang.cindex import (
+    BaseEnumeration,
+    Cursor,
+    CursorKind,
+    SourceRange,
+    TranslationUnit,
+    Type,
+    TypeKind,
+)
 
 # Add missing bindings...
 CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
@@ -22,6 +30,11 @@ CursorKind.EXPLICITPROTOCOLIMPL_ATTR = CursorKind(433)
 CursorKind.OBJCDESIGNATEDINITIALIZER_ATTR = CursorKind(434)
 CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
 CursorKind.FLAGENUM_ATTR = CursorKind(437)
+
+TranslationUnit.INCLUDE_ATTRIBUTED_TYPES = 0x1000
+TranslationUnit.VISIT_IMPLICIT_ATTRIBUTES = 0x2000
+
+TypeKind.ATTRIBUTED = TypeKind(163)
 
 
 # Add ctypes wrappers for a bunch of functions not
@@ -52,6 +65,12 @@ clang.cindex.register_function(
     clang.cindex.conf.lib,
     ("clang_getCursorResultType", [Cursor], Type, Type.from_result),
     False,
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_Type_getNullability", [Type], c_uint), False
+)
+clang.cindex.register_function(
+    clang.cindex.conf.lib, ("clang_Type_getModifiedType", [Type], Type), False
 )
 
 # objc module was missing this:
@@ -953,3 +972,31 @@ def _cursor_enum_value(self):
 
 
 Cursor.enum_value = property(fget=_cursor_enum_value)
+
+
+class NullabilityKind(BaseEnumeration):
+    _kinds = []
+    _name_map = None
+
+
+NullabilityKind.NONNULL = NullabilityKind(0)
+NullabilityKind.NULLABLE = NullabilityKind(1)
+NullabilityKind.UNSPECIFIED = NullabilityKind(2)
+NullabilityKind.INVALID = NullabilityKind(3)
+
+
+def _type_nullability(self):
+    if not hasattr(self, "_nullability"):
+        self._nullability = clang.cindex.conf.lib.clang_Type_getNullability(self)
+
+    return NullabilityKind.from_id(self._nullability)
+
+
+Type.nullability = property(fget=_type_nullability)
+
+
+def _type_modified_type(self):
+    return clang.cindex.conf.lib.clang_Type_getModifiedType(self)
+
+
+Type.modified_type = property(fget=_type_modified_type)

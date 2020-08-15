@@ -19,14 +19,15 @@ from clang.cindex import (
     TypeKind,
 )
 
-from objective.metadata.clanghelpers import (
-    AbstractClangVisitor,
-    LinkageKind,
-    ObjcDeclQualifier,
-)
-
 Config.set_library_path(
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
+)
+
+from objective.metadata.clanghelpers import (  # isort:skip
+    AbstractClangVisitor,
+    LinkageKind,
+    NullabilityKind,
+    ObjcDeclQualifier,
 )
 
 
@@ -104,6 +105,8 @@ class FrameworkParser(object):
         options = (
             TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
             | TranslationUnit.PARSE_SKIP_FUNCTION_BODIES
+            | TranslationUnit.INCLUDE_ATTRIBUTED_TYPES
+            | TranslationUnit.VISIT_IMPLICIT_ATTRIBUTES
         )
 
         fake_path = "main.m"
@@ -434,12 +437,12 @@ class FrameworkParser(object):
             if len(str(clang_typestr)) > 0:
                 typestr = clang_typestr
 
-        assert (
-            name is not None
-            and typestr is not None
-            and typestr != b""
-            and typestr != b"?"
-        ), "Bad params"
+        # assert (
+        #    name is not None
+        #    and typestr is not None
+        #    and typestr != b""
+        #    and typestr != b"?"
+        # ), "Bad params"
         self.externs[name] = {"typestr": typestr}
         if self.verbose:
             print("Added extern: " + name + " typestr: " + typestr)
@@ -660,6 +663,9 @@ class FrameworkParser(object):
             print("Added informal protocol: " + node.spelling)
 
     def add_class(self, node):
+        from .clang_tools import dump_node
+
+        dump_node(node)
 
         if node.spelling in self.classes:
             class_info = self.classes[node.spelling]
@@ -1237,7 +1243,15 @@ class FrameworkParser(object):
             else:
                 typestr, special = self.__get_typestr(a.type)
 
-            meth["args"].append({"typestr": typestr, "typestr_special": special})
+            extras = {}
+            if a.type.nullability == NullabilityKind.NONNULL:
+                extras["null_accepted"] = False
+            elif a.type.nullability == NullabilityKind.NULLABLE:
+                extras["null_accepted"] = True
+
+            meth["args"].append(
+                {"typestr": typestr, "typestr_special": special, **extras}
+            )
 
         return meth
 
@@ -1503,7 +1517,7 @@ class FrameworkParser(object):
                     )
                 return objc._C_PTR + t, s
             else:
-                result.append(dim)
+                result.append(b"%d" % (dim,))
 
             element_type = clang_type.element_type
             t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
@@ -1534,11 +1548,16 @@ class FrameworkParser(object):
         elif clang_type.kind == TypeKind.MEMBERPOINTER:
             raise UnsuportedClangOptionError(clang_type.kind)
 
+        elif clang_type.kind == TypeKind.ATTRIBUTED:
+            return self.__typestr_from_type(clang_type.modified_type, exogenous_name)
+
         else:
             typedecl = clang_type.get_declaration()
-            assert (
-                CursorKind.NO_DECL_FOUND != typedecl.kind
-            ), "Couldn't find declaration for non-primitive type"
+            if typedecl.kind == CursorKind.NO_DECL_FOUND:
+                return b"?", True
+            # assert (
+            # CursorKind.NO_DECL_FOUND != typedecl.kind
+            # ), "Couldn't find declaration for non-primitive type"
             typestr, special = self.__typestr_from_node(
                 typedecl, exogenous_name=exogenous_name
             )
