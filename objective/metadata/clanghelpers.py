@@ -24,7 +24,8 @@ CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
 CursorKind.FLAGENUM_ATTR = CursorKind(437)
 
 
-# Add ctypes wrappers for a bunch of functions not yet added to the real libclang python binding.
+# Add ctypes wrappers for a bunch of functions not
+# yet added to the real libclang python binding.
 clang.cindex.register_function(
     clang.cindex.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False
 )
@@ -229,7 +230,7 @@ class LinkageKind(object):
         if LinkageKind._kinds[value] is not None:
             raise ValueError("LinkageKind already loaded")
         self.value = value
-        self._name_map = dict()
+        self._name_map = {}
         LinkageKind._kinds[value] = self
         LinkageKind._name_map = None
 
@@ -324,9 +325,10 @@ def _type_get_quals(self):
 Type.quals = property(fget=_type_get_quals)
 
 # The helpful folks who produced the clang python bindings got a few things wrong.
-# For instance, they assert that a type is a FUNCTIONPROTO before allowing you to enumerate arguments
-# or ask if it's variadic. That's nice, but it doesn't cover block parameter declarations, which can
-# also answer those questions
+# For instance, they assert that a type is a FUNCTIONPROTO before allowing you
+# to enumerate arguments
+# or ask if it's variadic. That's nice, but it doesn't cover block parameter
+# declarations, which can also answer those questions
 
 
 def _type_argument_types(self):
@@ -415,8 +417,10 @@ def _type_pointee(self):
 
 Type.pointee = property(fget=_type_pointee)
 
-# Imagine that! The libclang implementation of Cursor.result_type is just dead wrong (goes through the type)
-# Move that property over from Cursor to Type, then replace the Cursor implementation later
+# Imagine that! The libclang implementation of Cursor.result_type is
+# just dead wrong (goes through the type)
+# Move that property over from Cursor to Type, then replace the
+# Cursor implementation later
 Type.result_type = Cursor.result_type
 
 Type.valid_type = property(
@@ -465,7 +469,8 @@ Type.next_typedefed_type = property(fget=_type_next_typedefed_type)
 def _type_element_count(self):
     """Retrieve the number of elements in this type.
 
-    Replacing the method from the libclang python bindings because the stock one throws an exception,
+    Replacing the method from the libclang python bindings because
+    the stock one throws an exception,
     of type *Exception*. Sheesh.
 
     Returns an int.
@@ -479,7 +484,7 @@ def _type_element_count(self):
     return result
 
 
-setattr(Type, "element_count", property(fget=_type_element_count))
+Type.element_count = property(fget=_type_element_count)
 
 ###
 # Additions to clang.cindex.TypeKind
@@ -538,7 +543,6 @@ __typekind_to_objc_types_map_common = {
     TypeKind.OBJCCLASS: objc._C_CLASS,
     # CXType_ObjCSel = 29,
     TypeKind.OBJCSEL: objc._C_SEL,
-    # TODO: Blocks shouldn't be @?, they should just be @ (modulo runtime versions where blocks were and weren't objs)
     TypeKind.BLOCKPOINTER: objc._C_ID + objc._C_UNDEF,
 }
 
@@ -652,7 +656,7 @@ def _cursor_get_adopted_protocol_nodes(self):
     ]:
         return None
 
-    protocols = list()
+    protocols = []
     for child in self.get_children():
         if child.kind == CursorKind.OBJC_PROTOCOL_REF:
             protocols.append(child)
@@ -696,15 +700,18 @@ def _cursor_get_function_specifiers(self):
     if self.kind != CursorKind.FUNCTION_DECL:
         return None
 
-    # function specifiers are "inline", "explicit" and "virtual" the last two being C++ only
+    # function specifiers are "inline", "explicit" and
+    # "virtual" the last two being C++ only
     func_name = self.spelling
     func_specs = set()
 
     if self.is_virtual:
         func_specs.add("virtual")
 
-    # I was originally doing this by iterating tokens, but that expanded macros, which expanded #if/#else macros
-    # some clauses of which had inline in them and was causing false alarms. Hopefully this is better.
+    # I was originally doing this by iterating tokens, but
+    # that expanded macros, which expanded #if/#else macros
+    # some clauses of which had inline in them and was causing false alarms.
+    # Hopefully this is better.
 
     raw_string = self.extent.get_raw_contents()
     before_func = raw_string.split(func_name)[0]
@@ -816,13 +823,14 @@ Cursor.result_type_valid = property(
 
 
 def _cursor_result_type(self):
-    # See note above;  Yes, we are *replacing* the implementation of result_type from libclang
+    # See note above;  Yes, we are *replacing* the
+    # implementation of result_type from libclang
     if not hasattr(self, "_result_type"):
         self._result_type = clang.cindex.conf.lib.clang_getCursorResultType(self)
     return self._result_type
 
 
-setattr(Cursor, "result_type", property(fget=_cursor_result_type))
+Cursor.result_type = property(fget=_cursor_result_type)
 
 __specifiers = ["public", "protected", "package", "private"]
 
@@ -934,14 +942,14 @@ def _cursor_enum_value(self):
             TypeKind.ULONGLONG,
             TypeKind.UINT128,
         ):
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclUnsignedValue(
+            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
                 self
             )
         else:
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclValue(
+            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
                 self
             )
     return self._enum_value
 
 
-setattr(Cursor, "enum_value", property(fget=_cursor_enum_value))
+Cursor.enum_value = property(fget=_cursor_enum_value)

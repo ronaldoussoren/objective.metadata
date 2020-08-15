@@ -65,11 +65,41 @@ class UStr(object):
         value = self._value.encode("utf-8")
         return 'b%r.decode("utf-8")' % (value,)
 
-    def __cmp__(self, other):
+    def __eq__(self, other):
         if not isinstance(other, UStr):
             raise TypeError((self, other))
 
-        return cmp(self._value, other._value)
+        return self._value == other._value
+
+    def __ne__(self, other):
+        if not isinstance(other, UStr):
+            raise TypeError((self, other))
+
+        return self._value != other._value
+
+    def __lt__(self, other):
+        if not isinstance(other, UStr):
+            raise TypeError((self, other))
+
+        return self._value < other._value
+
+    def __le__(self, other):
+        if not isinstance(other, UStr):
+            raise TypeError((self, other))
+
+        return self._value <= other._value
+
+    def __gt__(self, other):
+        if not isinstance(other, UStr):
+            raise TypeError((self, other))
+
+        return self._value > other._value
+
+    def __ge__(self, other):
+        if not isinstance(other, UStr):
+            raise TypeError((self, other))
+
+        return self._value >= other._value
 
     def __hash__(self):
         return hash(self._value)
@@ -89,13 +119,44 @@ class WrappedCall(object):
         if args:
             return "%s(%s)" % (self.name, ", ".join(args))
 
-    def cmp(self, other):
+    def _key(self):
+        return (self.name, self.args, self.kwds)
+
+    def __eq__(self, other):
         if not isinstance(other, WrappedCall):
             raise TypeError
 
-        return cmp(
-            (self.name, self.args, self.kwds), (other.name, other.args, other.kwds)
-        )
+        return self._key() == other._key()
+
+    def __ne__(self, other):
+        if not isinstance(other, WrappedCall):
+            raise TypeError
+
+        return self._key() != other._key()
+
+    def __lt__(self, other):
+        if not isinstance(other, WrappedCall):
+            raise TypeError
+
+        return self._key() < other._key()
+
+    def __le__(self, other):
+        if not isinstance(other, WrappedCall):
+            raise TypeError
+
+        return self._key() <= other._key()
+
+    def __gt__(self, other):
+        if not isinstance(other, WrappedCall):
+            raise TypeError
+
+        return self._key() > other._key()
+
+    def __ge__(self, other):
+        if not isinstance(other, WrappedCall):
+            raise TypeError
+
+        return self._key() >= other._key()
 
     def hash(self):
         return hash((self.name, self.args, self.kwds))
@@ -154,10 +215,7 @@ def merge_defs(defs, key):
                 v.add(d["arch"])
                 break
         else:
-            try:
-                uniq.append((d[key], {d["arch"]}))
-            except:
-                raise
+            uniq.append((d[key], {d["arch"]}))
 
     if len(uniq) == 1:
         return {key: uniq[0][0]}
@@ -241,7 +299,6 @@ def extract_informal_protocols(exceptions, headerinfo):
             )
 
         else:
-            # FIXME: This is too simple, need to actually merge the list of definitions
             merge_definition_lists(found[name])
 
             result[name] = informal_protocol(name, merge_definition_lists(found[name]))
@@ -381,7 +438,6 @@ def calc_func_proto(exc, info, arch):
             arg["callable"] = _cleanup_callable_metadata(dict(arg["callable"]))
 
         if "function" in arg:
-            # XXX: This is suboptimal at best
             arg["callable"] = _cleanup_callable_metadata(dict(arg["function"]))
             del arg["function"]
             print(arg["callable"])
@@ -434,7 +490,7 @@ def extract_functions(exceptions, headerinfo):
     for idx, (name, value) in enumerate(sorted(functions.items())):
         try:
             info = merge_defs(value, "typestr")
-        except:
+        except BaseException:
             print("[%d/%d] %s" % (idx + 1, len(functions), name))
             raise
         if value[0]["metadata"]:
@@ -493,7 +549,8 @@ def extract_opaque_cftypes(exceptions, headerinfo):
         if "opaque" not in value:
             continue
 
-        # Old code used info unassigned (or worse, left over from the previous iteration)
+        # Old code used info unassigned (or worse, left
+        # over from the previous iteration)
         # cftypes[name] = [{'typestr': value['typestr'], 'arch': info['arch']}]
         cftypes[name] = [{"typestr": value["typestr"], "arch": last_info_arch}]
 
@@ -682,12 +739,10 @@ def extract_enums(exceptions, headerinfo):
 
                 if excinfo[name].get("type") == "unicode":
                     if name in result:
-                        result[name].append(
-                            {"value": unichr(value), "arch": info["arch"]}
-                        )
+                        result[name].append({"value": chr(value), "arch": info["arch"]})
 
                     else:
-                        result[name] = [{"value": unichr(value), "arch": info["arch"]}]
+                        result[name] = [{"value": chr(value), "arch": info["arch"]}]
                     continue
 
             if name in result:
@@ -740,7 +795,7 @@ def merge_arginfo(current, update, arch, only_special):
 
 def calc_type(choices):
     if isinstance(choices, str):
-        # FIXME: investigate why this is needed (Collabortation wrappers)
+        # investigate why this is needed (Collabortation wrappers)
         return choices
     if len(choices) == 1:
         return BStr(next(iter(choices)))
@@ -993,7 +1048,6 @@ def extract_method_info(exceptions, headerinfo, section="classes"):
                     result[key][-1]["arch"] = info["arch"]
                     result[key][-1]["class"] = name
 
-    # XXX: copy data that's only in the exceptions file
     for key in list(result):
         if section != "classes":
             use_key = ("NSObject",) + key[1:]
@@ -1138,7 +1192,7 @@ def emit_enums(fp, enums):
             else:
                 result.append("%s@%s" % (k, v["value"]))
 
-        elif isinstance(v, (int, long)):
+        elif isinstance(v, int):
             result.append("%s@%s" % (k, v))
 
         else:
@@ -1202,7 +1256,7 @@ def extract_literal(exceptions, headerinfo):
                 if value.get("unicode", False):
                     is_unicode = True
 
-                if isinstance(value["value"], (str, unicode)):
+                if isinstance(value["value"], str):
                     if is_unicode:
                         value = UStr(value["value"])
                     else:
@@ -1250,7 +1304,7 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     exceptions = load_framework_info(exceptions_fn)
     headerinfo = [load_framework_info(fn) for fn in headerinfo_fns]
     with open(output_fn, "w") as fp:
-        fp.write(HEADER % dict(timestamp=time.ctime()))
+        fp.write(HEADER % {"timestamp": time.ctime()})
 
         emit_structs(fp, extract_structs(exceptions, headerinfo))
         emit_externs(fp, extract_externs(exceptions, headerinfo))

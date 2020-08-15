@@ -25,10 +25,8 @@ from objective.metadata.clanghelpers import (
     ObjcDeclQualifier,
 )
 
-from .clang_tools import dump_node
-
 Config.set_library_path(
-    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"
+    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
 )
 
 
@@ -153,7 +151,7 @@ class FrameworkParser(object):
             "arch": self.arch,
             "sdk": self.sdk,
             "release": platform.mac_ver()[0],
-            "headers": list(sorted(self.headers)),
+            "headers": sorted(self.headers),
             "definitions": {
                 "enum": self.enum_values,
                 "structs": self.structs,
@@ -208,7 +206,8 @@ class FrameworkParser(object):
             for prot, protdef in getattr(self, section).items():
                 for meth in protdef["methods"]:
                     info = {}
-                    # My Read: remove metadata for protocol methods that take pointer args
+                    # My Read: remove metadata for protocol methods that
+                    # take pointer args
                     for idx, a in enumerate(meth["args"]):
                         if a["typestr"].startswith(b"^"):
                             a = dict(a)
@@ -322,7 +321,8 @@ class FrameworkParser(object):
         while cursor and cursor.kind != CursorKind.TRANSLATION_UNIT:
             node_file = cursor.location.file
             if node_file and framework_dir in node_file.name:
-                # make a note of it in our headers list, unless it's the umbrella headers
+                # make a note of it in our headers list, unless it's
+                # the umbrella headers
                 base_name = os.path.basename(node_file.name)
                 if base_name != os.path.basename(self.start_header):
                     self.headers.add(base_name)
@@ -437,8 +437,8 @@ class FrameworkParser(object):
         assert (
             name is not None
             and typestr is not None
-            and typestr is not ""
-            and typestr is not "?"
+            and typestr != b""
+            and typestr != b"?"
         ), "Bad params"
         self.externs[name] = {"typestr": typestr}
         if self.verbose:
@@ -528,20 +528,23 @@ class FrameworkParser(object):
             if arg_type in self.cftypes:
                 self.cftypes[arg_type]["gettypeid_func"] = name
 
-        # Ideally libclang would give us full parsing of __attributes__ but it doesn't. We do the best we can,
-        # and what libclang gives us is arguably better than is_variadic and arg_name == "format"
+        # Ideally libclang would give us full parsing of __attributes__
+        # but it doesn't. We do the best we can, nd what libclang gives us
+        # is arguably better than is_variadic and arg_name == "format"
         index_of_printf_format_arg = FrameworkParser.__index_of_printf_format_arg(node)
         if index_of_printf_format_arg is not None:
             if index_of_printf_format_arg < len(func["args"]):
                 arg = func["args"][index_of_printf_format_arg]
                 arg["printf_format"] = True
             else:
-                # basically, libclang's C API doesnt expose the values we need to be sure about this in all cases
+                # basically, libclang's C API doesnt expose the values
+                # we need to be sure about this in all cases
                 for arg in func["args"]:
                     if arg["name"] == "format":
                         arg["printf_format"] = True
         else:
-            # Let's check the old way just in case. There *are* functions in Apple's frameworks that don't have
+            # Let's check the old way just in case. There *are* functions
+            # in Apple's frameworks that don't have
             # the right __attribute__, believe it or not.
             if func.get("variadic"):
                 for arg in func["args"]:
@@ -554,7 +557,8 @@ class FrameworkParser(object):
                         )
                         print(diagnostic_string)
 
-        # This is arguably not necessary, but matches the behavior of the previous parsing engine.
+        # This is arguably not necessary, but matches the behavior of
+        # the previous parsing engine.
         # Ideally we would get rid of this.
         if len(func["args"]) == 0:
             func["args"].append({"name": None, "typestr": b"v"})
@@ -681,7 +685,8 @@ class FrameworkParser(object):
             proto_str = proto_ref.referenced.spelling
             class_info["protocols"].add(proto_str)
 
-        # This used to track visibility for methods, which is not a thing (only for ivars) and made no sense
+        # This used to track visibility for methods, which is not a thing
+        # (only for ivars) and made no sense
 
         for decl in node.get_children() or []:
             if (
@@ -777,8 +782,10 @@ class FrameworkParser(object):
                 + str(category_name)
             )
 
-    # This is largely unmolested from the original parser, but operates on a single define and not the whole
-    # file and no longer makes its own invocation, but uses libclang with the PARSE_DETAILED_PROCESSING_RECORD option
+    # This is largely unmolested from the original parser, but
+    # operates on a single define and not the whole
+    # file and no longer makes its own invocation, but uses
+    # libclang with the PARSE_DETAILED_PROCESSING_RECORD option
     def parse_define(self, define_str, curfile=""):
         if not define_str.startswith("#define "):
             define_str = "#define " + define_str
@@ -859,7 +866,7 @@ class FrameworkParser(object):
 
                 m = UNICODE_RE.match(value)
                 if m is not None:
-                    self.literals[key] = {"unicode": True, "value": unicode(m.group(1))}
+                    self.literals[key] = {"unicode": True, "value": m.group(1)}
                     if self.verbose:
                         print(
                             "Added macro literal name: "
@@ -871,7 +878,7 @@ class FrameworkParser(object):
 
                 m = UNICODE2_RE.match(value)
                 if m is not None:
-                    self.literals[key] = unicode(m.group(1))
+                    self.literals[key] = m.group(1)
                     if self.verbose:
                         print(
                             "Added macro literal name: "
@@ -986,7 +993,8 @@ class FrameworkParser(object):
 
                 m = NULL_VALUE.match(value)
                 if m is not None:
-                    # For #define's like this:  #define kDSpEveryContext ((DSpContextReference)NULL)
+                    # For #define's like this:
+                    #     #define kDSpEveryContext ((DSpContextReference)NULL)
                     self.literals[key] = None
                     if self.verbose:
                         print(
@@ -1122,7 +1130,9 @@ class FrameworkParser(object):
                         and index_of_format_arg is None
                     ):
                         try:
-                            # attribute syntax uses counting numbers, we use array indexes
+                            # attribute syntax uses counting
+                            # numbers,
+                            # we use array indexes
                             val = int(string) - 1
 
                         except ValueError:
@@ -1141,7 +1151,7 @@ class FrameworkParser(object):
         return_type = thing.get_result()
         assert return_type.kind != TypeKind.INVALID
 
-        result = dict()
+        result = {}
         result["retval"] = {"typestr": self.__get_typestr(return_type)[0]}
         result["args"] = []
 
@@ -1210,9 +1220,6 @@ class FrameworkParser(object):
         else:
             typestr, special = self.__get_typestr(decl.result_type.valid_type)
 
-        # TODO: Remove visibility from method metadata. This is just so we align with the old metadata.
-        # There's actually no visibility for methods -- they're all public.
-
         meth = {
             "selector": decl.spelling,
             "visibility": "public",
@@ -1262,16 +1269,20 @@ class FrameworkParser(object):
         @param value:
         @rtype : int
         """
-        if isinstance(value, (int, long)):
+        if isinstance(value, int):
             return value
         value = value.lower().rstrip("l").rstrip("u")
         return int(value, 0)
 
     def __get_typestr(self, obj, exogenous_name=None):
         """
-        There was a bunch of logic around "Special", but in practice, the only things that are special are ObjC BOOL and
-        anonymous structs in typedef i.e. typedef struct { int foo; } MyStruct; (Technically that struct is anonymous
-        because there's no tag, like this: typedef struct _MyStruct { int foo; } MyStruct;
+        There was a bunch of logic around "Special", but in practice,
+        the only things that are special are ObjC BOOL and
+        anonymous structs in typedef i.e.
+            typedef struct { int foo; } MyStruct;
+        (Technically that struct is anonymous
+        because there's no tag, like this:
+            typedef struct _MyStruct { int foo; } MyStruct;
 
         @type obj: [Cursor, Type]
         @param obj:
@@ -1423,7 +1434,8 @@ class FrameworkParser(object):
                 typestr = objc._C_UNICHAR
 
             else:
-                # In an ideal world, we would go right to canonical here, but we can't because we treat some typedefs
+                # In an ideal world, we would go right to canonical
+                # here, but we can't because we treat some typedefs
                 # like BOOL and Boolean and UniChar specially.
                 next_type = clang_type.next_typedefed_type
                 exogenous_name = (
@@ -1444,9 +1456,9 @@ class FrameworkParser(object):
                     # Maybe we can do better in the future?
                     pass
 
-                if (
-                    b"{" in typestr
-                ):  # hopefully checking the string is cheaper than fetching the declaration
+                if b"{" in typestr:
+                    # hopefully checking the string is cheaper
+                    # than fetching the declaration
                     canonical_type_decl = canonical_type.declaration
                     # anonymous struct... we treat these as "special" for some reason
                     if (
@@ -1491,7 +1503,6 @@ class FrameworkParser(object):
                     )
                 return objc._C_PTR + t, s
             else:
-                # XXX
                 result.append(dim)
 
             element_type = clang_type.element_type
@@ -1802,13 +1813,13 @@ class DefinitionVisitor(AbstractClangVisitor):
 LINE_RE = re.compile(r'^# \d+ "([^"]*)" ')
 DEFINE_RE = re.compile(r"#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$")
 INT_RE = re.compile(
-    "^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$"
+    r"^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$"  # noqa: B950
 )
-FLOAT_RE = re.compile("^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$")
-STR_RE = re.compile('^"(.*)"$')
-UNICODE_RE = re.compile('^@"(.*)"$')
-UNICODE2_RE = re.compile('^CFSTR\("(.*)"\)$')
-ALIAS_RE = re.compile("^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$")
+FLOAT_RE = re.compile(r"^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$")
+STR_RE = re.compile(r'^"(.*)"$')
+UNICODE_RE = re.compile(r'^@"(.*)"$')
+UNICODE2_RE = re.compile(r'^CFSTR\("(.*)"\)$')
+ALIAS_RE = re.compile(r"^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$")
 NULL_VALUE = re.compile(r"\(\([A-Za-z0-9]+\)NULL\)")
 CALL_VALUE = re.compile(r"^[A-Za-z0-9]+\([A-Za-z0-9]*\)$")
 FUNC_DEFINE_RE = re.compile(

@@ -1,5 +1,9 @@
 syntax: glob
 
+.isort.cfg
+.mypy_cache
+build
+dist
 *.pyc
 *.pyo
 *.egg-info

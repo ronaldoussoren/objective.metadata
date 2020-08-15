@@ -13,7 +13,7 @@ def _encode_default(obj):
     encodes set() as a sorted list
     """
     if isinstance(obj, set):
-        return list(sorted(obj, key=lambda v: (type(v).__name__, v)))
+        return sorted(obj, key=lambda v: (type(v).__name__, v))
     elif isinstance(obj, bytes):
         return obj.decode()
     raise TypeError(obj)
@@ -57,7 +57,7 @@ def save_framework_info(filename, header, data, verbose=False):
 
 
 __javascript_comment_re = re.compile(
-    "(^)?[^\S\n]*/(?:\*(.*?)\*/[^\S\n]*|/[^\n]*)($)?", re.DOTALL | re.MULTILINE
+    r"(^)?[^\S\n]*/(?:\*(.*?)\*/[^\S\n]*|/[^\n]*)($)?", re.DOTALL | re.MULTILINE
 )
 
 
@@ -75,12 +75,12 @@ def load_framework_info(filename, verbose=False):
         match = __javascript_comment_re.search(data)
         while match:
             # single line comment
-            data = data[: match.start()] + data[match.end() :]
+            data = data[: match.start()] + data[match.end() :]  # noqa: E203
             match = __javascript_comment_re.search(data)
 
         # Then hand it to the intolerand JSON parser
         try:
             return json.loads(data, object_pairs_hook=_decode_object)
-        except:
+        except BaseException:
             print(filename)
             raise

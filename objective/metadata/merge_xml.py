@@ -40,7 +40,6 @@ def typestr2typestr(value):
     elif value == "Z":
         return "B"
 
-    # TODO: Handle compound types, not needed for now
     return value
 
 
@@ -130,7 +129,7 @@ def update_functions(exceptions, xml):
 def update_protocols(exceptions, xml, exception_key):
     nsobject_node = xml.find(".//class[@name='NSObject']")
 
-    for protname, protdata in exceptions["definitions"].get(exception_key, {}).items():
+    for _protname, protdata in exceptions["definitions"].get(exception_key, {}).items():
         for method in protdata["methods"]:
             methnode = locate_method(
                 nsobject_node, method["selector"], method["class_method"]

@@ -69,8 +69,8 @@ protocols_command = subparsers.add_parser(
 def make_pairs(sequence):
     sequence = iter(sequence)
     while True:
-        first = sequence.next()
-        second = sequence.next()
+        first = next(sequence)
+        second = next(sequence)
         yield (first, second)
 
 
@@ -198,8 +198,6 @@ def main():
         import clang.cindex
 
         clang.cindex.Config.set_library_file(args.libclang)
-
-    # XXX: else: use libclang from default Xcode
 
     for info in parse_ini(args.ini_file, args.ini_section):
         if args.command == "scan":

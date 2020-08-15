@@ -6,7 +6,7 @@ import re
 import textwrap
 import time
 
-from .compile import _is_32_bit, _is_64_bit, _is_big_endian, _is_little_endian
+from .compile import _is_32_bit, _is_64_bit
 from .storage import load_framework_info
 
 
@@ -44,15 +44,6 @@ def classify_archs(archs):
     if _is_64_bit(archs):
         print([(a, _is_32_bit(a)) for a in archs])
         return "defined(__LP64__)"
-
-    if 0:
-        # XXX: disabled for now because we don't
-        #      have ppc metadata
-        if _is_little_endian(archs):
-            return "!defined(__BIG_ENDIAN__)"
-
-        if _is_big_endian(archs):
-            return "defined(__BIG_ENDIAN__)"
 
     return None
 
@@ -99,7 +90,7 @@ def compile_protocol_file(output_fn, exceptions_fn, headerinfo_fns):
         os.makedirs(os.path.dirname(output_fn))
 
     with open(output_fn, "w") as fp:
-        fp.write(HEADER % dict(timestamp=time.ctime()))
+        fp.write(HEADER % {"timestamp": time.ctime()})
 
         protocols = collections.defaultdict(list)
 

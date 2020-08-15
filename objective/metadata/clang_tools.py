@@ -58,11 +58,6 @@ def dump_type(node, indent=""):
     print(indent + "translation_unit:", node.translation_unit)
 
 
-"""
-    <clang.cindex.Type object at 0x10feb1f80>['__class__', '__ctypes_from_outparam__', '__delattr__', '__dict__', '__doc__', '__eq__', '__format__', '__getattribute__', '__hash__', '__init__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__setstate__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_b_base_', '_b_needsfree_', '_fields_', '_kind_id', '_objects', '_tu', 'argument_types', 'data', 'element_count', 'element_type', 'from_result', 'get_array_element_type', 'get_array_size', 'get_canonical', 'get_declaration', 'get_pointee', 'get_result', 'is_const_qualified', 'is_function_variadic', 'is_pod', 'is_restrict_qualified', 'is_volatile_qualified', 'kind', 'translation_unit']
-"""
-
-
 def dump_node(node, indent=""):
     header = [type(node).__name__, node.kind.name]
     if node.spelling:
