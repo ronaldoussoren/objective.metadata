@@ -106,21 +106,21 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
 
         file_archs = macho_archs(path)
         if arch not in file_archs:
-            print >>sys.stderr, "Framework %r not available for arch %r" % (framework, arch)
+            print("Framework %r not available for arch %r" % (framework, arch), file=sys.stderr)
             sys.exit(1)
 
         path = framework_path = os.path.dirname(path)
         path = os.path.join(sdk_root, path[1:], 'Headers')
         if not os.path.exists(path):
-            print framework_path
+            print(framework_path)
             if not os.path.exists(os.path.join(sdk_root, framework_path[1:])):
                 path = os.path.join(framework_path, 'Headers')
                 if not os.path.exists(path):
-                    print >>sys.stderr, "Framework without headers[2]", os.path.join(sdk_root, framework_path[1:])
+                    print("Framework without headers[2]", os.path.join(sdk_root, framework_path[1:]), file=sys.stderr)
                     sys.exit(1)
 
             else:
-                print >>sys.stderr, "Framework without headers[1]"
+                print("Framework without headers[1]", file=sys.stderr)
                 sys.exit(1)
 
         files = os.listdir(path)
@@ -129,7 +129,7 @@ def scan_headers(raw_fn, exceptions_fn, framework, start_header, preheaders, ext
 
         else:
             if framework + '.h' not in files:
-                print >>sys.stderr, "Framework doesn't have a central header <%s/%s.h>" % (framework, framework)
+                print("Framework doesn't have a central header <%s/%s.h>" % (framework, framework), file=sys.stderr)
                 sys.exit(1)
 
     prs = parsing.FrameworkParser(

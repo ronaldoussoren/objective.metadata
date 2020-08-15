@@ -13,7 +13,9 @@ def _encode_default(obj):
     encodes set() as a sorted list
     """
     if isinstance(obj, set):
-        return list(sorted(obj))
+        return list(sorted(obj, key=lambda v: (type(v).__name__, v)))
+    elif isinstance(obj, bytes):
+        return obj.decode()
     raise TypeError(obj)
 
 
@@ -28,14 +30,11 @@ def _decode_object(pairs):
     """
     result = {}
     for k, v in pairs:
-        if isinstance(v, unicode):
-            v = v.encode('ascii')
-
         if k.isdigit():
             result[int(k)] = v
 
-        elif isinstance(k, unicode):
-            result[k.encode('ascii')] = v
+        elif k in { "type", "typestr", "type_override", "typestr_override", "sel_of_type" }:
+            result[k] = v.encode()
 
         else:
             result[k] = v
@@ -74,5 +73,5 @@ def load_framework_info(filename, verbose=False):
         try:
             return json.loads(data, object_pairs_hook=_decode_object)
         except:
-            print filename
+            print(filename)
             raise

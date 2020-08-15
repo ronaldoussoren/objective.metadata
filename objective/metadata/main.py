@@ -8,7 +8,7 @@ import os
 import sys
 import glob
 import platform
-import ConfigParser
+import configparser
 import subprocess
 
 from . import compile
@@ -48,7 +48,7 @@ def make_pairs(sequence):
 def parse_ini(ini_file, ini_sections):
     ini_dir = os.path.dirname(ini_file)
 
-    cfg = ConfigParser.ConfigParser()
+    cfg = configparser.ConfigParser()
     cfg.read([ini_file])
     if not ini_sections:
         ini_sections = cfg.sections()
@@ -119,15 +119,17 @@ def parse_ini(ini_file, ini_sections):
 
 def path_for_sdk_version(version):
     with open(os.devnull, 'a') as dn:
-        out = subprocess.check_output(["xcodebuild", "-version", "-sdk", "macosx%s" % (version,), "Path"], stderr=dn)
+        out = subprocess.check_output(["xcodebuild", "-version", "-sdk", "macosx%s" % (version,), "Path"], stderr=dn).decode()
         print(out)
         return out.strip()
 
 
 def sdk_ver_from_path(path):
+    assert isinstance(path, str)
     with open(os.devnull, 'a') as dn:
         process = subprocess.Popen(["xcodebuild", "-version", "-sdk"], stderr=dn, stdout=-1)
         out, unused_err = process.communicate()
+        out = out.decode()
         versions = out.split('SDKVersion: ')
         for ver in versions:
             if path in ver:
@@ -186,7 +188,7 @@ def main():
                     raw_fn = os.path.join(info["raw"], "%s-%s.fwinfo" % (arch, osver))
 
                     if args.verbose:
-                        print "Scan framework=%r sdk=%r arch=%r" % (info["framework"], sdk, arch)
+                        print("Scan framework=%r sdk=%r arch=%r" % (info["framework"], sdk, arch))
                     scan.scan_headers(
                         raw_fn,
                         info["exceptions"],
@@ -204,17 +206,17 @@ def main():
 
         elif args.command == "import":
             if args.verbose:
-                print "Import framework=%r bridgesupport=%r" % (info["framework"], args.bridgesupport_file)
+                print("Import framework=%r bridgesupport=%r" % (info["framework"], args.bridgesupport_file))
             merge_xml.merge_xml(info["exceptions"], args.bridgesupport_file)
 
         elif args.command == "compile":
             if args.verbose:
-                print "Compile framework=%r target=%r" % (info["framework"], info["compiled"])
+                print("Compile framework=%r target=%r" % (info["framework"], info["compiled"]))
             compile.compile_metadata(info["compiled"], info["exceptions"], glob.glob(info["raw"] + "/*"), )
 
         elif args.command == "protocols":
             protocols.compile_protocol_file(info["protocols-file"], info["exceptions"], glob.glob(info["raw"] + "/*"), )
 
         else:
-            print "Internal error: Unimplemented command: %s" % (args.command,)
+            print("Internal error: Unimplemented command: %s" % (args.command,))
             sys.exit(1)

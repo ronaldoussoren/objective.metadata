@@ -2,7 +2,6 @@
 Utility module for parsing the header files in a framework and extracting
 interesting definitions.
 """
-from __future__ import print_function
 import os
 import platform
 import re
@@ -12,6 +11,8 @@ import objc
 from clang.cindex import Config, Index, Cursor, CursorKind, Type, TypeKind, TranslationUnit, TranslationUnitLoadError
 Config.set_library_path('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/')
 from objective.metadata.clanghelpers import ObjcDeclQualifier, AbstractClangVisitor, LinkageKind
+
+from .clang_tools import dump_node
 
 
 class FrameworkParser(object):
@@ -144,7 +145,7 @@ class FrameworkParser(object):
 
             # My Read: Get rid of all function specs that take ptr arguments?
             for idx, a in enumerate(definition['args']):
-                if a['typestr'].startswith('^'):
+                if a['typestr'].startswith(b'^'):
                     a = dict(a)
                     del a['typestr']
                     del a['name']
@@ -154,7 +155,7 @@ class FrameworkParser(object):
                         info['args'] = {idx: a}
 
             # My Read: Get rid of all typestrs of pointer return types
-            if definition['retval']['typestr'].startswith('^'):
+            if definition['retval']['typestr'].startswith(b'^'):
                 a = dict(definition['retval'])
                 del a['typestr']
                 info['retval'] = a
@@ -175,7 +176,7 @@ class FrameworkParser(object):
                     info = {}
                     # My Read: remove metadata for protocol methods that take pointer args
                     for idx, a in enumerate(meth['args']):
-                        if a['typestr'].startswith('^'):
+                        if a['typestr'].startswith(b'^'):
                             a = dict(a)
                             del a['typestr']
                             del a['typestr_special']
@@ -185,7 +186,7 @@ class FrameworkParser(object):
                                 info['args'] = {idx: a}
 
                     # My Read: remove metadata for protocol methods that return pointers
-                    if meth['retval']['typestr'].startswith('^'):
+                    if meth['retval']['typestr'].startswith(b'^'):
                         a = dict(meth['retval'])
                         del a['typestr']
                         del a['typestr_special']
@@ -208,7 +209,7 @@ class FrameworkParser(object):
 
                 # My Read: remove metadata for propeties of pointer types
                 for prop in protdef['properties']:
-                    if prop['typestr'].startswith('^'):
+                    if prop['typestr'].startswith(b'^'):
                         # My Read: for informal prots only, add a dictionary
                         if prot not in self.formal_protocols:
                             prots[section][prot] = {}
@@ -225,7 +226,7 @@ class FrameworkParser(object):
             for method in clsdef['methods']:
                 info = {}
                 for idx, a in enumerate(method['args']):
-                    if a['typestr'].startswith('^'):
+                    if a['typestr'].startswith(b'^'):
                         a = dict(a)
                         del a['typestr']
                         del a['typestr_special']
@@ -234,7 +235,7 @@ class FrameworkParser(object):
                         except KeyError:
                             info['args'] = {idx: a}
 
-                if method['retval']['typestr'].startswith('^'):
+                if method['retval']['typestr'].startswith(b'^'):
                     a = dict(method['retval'])
                     del a['typestr']
                     del a['typestr_special']
@@ -254,7 +255,7 @@ class FrameworkParser(object):
                     classes[clsname]['methods'].append(info)
 
             for prop in clsdef['properties']:
-                if prop['typestr'].startswith('^'):
+                if prop['typestr'].startswith(b'^'):
                     if clsname not in classes:
                         classes[clsname] = {}
                     if 'properties' not in classes[clsname]:
@@ -367,7 +368,7 @@ class FrameworkParser(object):
                 ts, _ = self.__get_typestr(field_decl.type)
                 assert ts
 
-                if '?' in ts:
+                if b'?' in ts:
                     #print("Skip %s: contains function pointers"%(name,))
                     return
 
@@ -510,7 +511,7 @@ class FrameworkParser(object):
         # This is arguably not necessary, but matches the behavior of the previous parsing engine.
         # Ideally we would get rid of this.
         if len(func['args']) == 0:
-            func['args'].append({"name": None, "typestr": "v"})
+            func['args'].append({"name": None, "typestr": b"v"})
 
         # Log message
         if self.verbose:
@@ -521,7 +522,7 @@ class FrameworkParser(object):
 
     def add_protocol(self, node):
         self.formal_protocols[node.spelling] = protocol = {
-            'implements': map(lambda x: x.referenced.spelling, node.get_adopted_protocol_nodes()),
+            'implements': [x.referenced.spelling for x in node.get_adopted_protocol_nodes()],
             'methods': [],
             'properties': [],
         }
@@ -554,7 +555,7 @@ class FrameworkParser(object):
 
     def add_informal_protocol(self, node):
         self.informal_protocols[node.spelling] = protocol = {
-            'implements': map(lambda x: x.referenced.spelling, node.get_adopted_protocol_nodes()),
+            'implements': [x.referenced.spelling for x in node.get_adopted_protocol_nodes()],
             'methods': [],
             'properties': [],
         }
@@ -639,8 +640,17 @@ class FrameworkParser(object):
 
     def add_category(self, node):
         category_name = node.spelling
-        class_cursor = node.get_category_class_cursor().referenced
-        class_name = class_cursor.referenced.spelling
+        print(node.spelling)
+        #dump_node(node)
+        #class_cursor = node.get_category_class_cursor().referenced
+        #class_name = class_cursor.referenced.spelling
+        for decl in node.get_children():
+            if decl.kind == CursorKind.OBJC_CLASS_REF:
+                class_name = decl.spelling
+                break
+        else:
+            raise RuntimeError('Category without class reference')
+
         if (class_name or "") == "":
             print("s")
 
@@ -973,7 +983,7 @@ class FrameworkParser(object):
             })
 
         if len(result['args']) == 0:
-            result['args'].append({"name": None, "typestr": "v"})
+            result['args'].append({"name": None, "typestr": b"v"})
 
         return result
 
@@ -1229,11 +1239,11 @@ class FrameworkParser(object):
                 else:
                     typestr, special = self.__typestr_from_type(canonical_type, exogenous_name=exogenous_name)
 
-                if typestr == "^?" and clang_type.looks_like_function:
+                if typestr == b"^?" and clang_type.looks_like_function:
                     # Maybe we can do better in the future?
                     pass
 
-                if "{" in typestr:  # hopefully checking the string is cheaper than fetching the declaration
+                if b"{" in typestr:  # hopefully checking the string is cheaper than fetching the declaration
                     canonical_type_decl = canonical_type.declaration
                     # anonymous struct... we treat these as "special" for some reason
                     if canonical_type_decl and canonical_type_decl.kind == CursorKind.STRUCT_DECL \
@@ -1250,7 +1260,7 @@ class FrameworkParser(object):
 
         # CXType_FunctionNoProto = 110,
         elif clang_type.kind == TypeKind.FUNCTIONNOPROTO:
-            typestr = ''
+            typestr = b''
 
         # CXType_FunctionProto = 111,
         elif clang_type.kind == TypeKind.FUNCTIONPROTO:
@@ -1258,7 +1268,7 @@ class FrameworkParser(object):
 
         # CXType_ConstantArray = 112,
         elif clang_type.kind in [TypeKind.CONSTANTARRAY, TypeKind.INCOMPLETEARRAY, TypeKind.VECTOR]:
-            result = list()
+            result = []
             result.append(objc._C_ARY_B)
             dim = clang_type.element_count
             if dim is None or int(dim) is None or int(dim) == 0:
@@ -1269,7 +1279,8 @@ class FrameworkParser(object):
                     t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
                 return objc._C_PTR + t, s
             else:
-                result.append(str(dim))
+                # XXX
+                result.append(dim)
 
             element_type = clang_type.element_type
             t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
@@ -1278,7 +1289,7 @@ class FrameworkParser(object):
                 special = True
 
             result.append(objc._C_ARY_E)
-            typestr = ''.join(result)
+            typestr = b''.join(result)
 
         # CXType_Vector = 113,
         elif clang_type.kind == TypeKind.VECTOR:
@@ -1373,14 +1384,14 @@ class FrameworkParser(object):
             result = [objc._C_STRUCT_B]
             if node.spelling is None or node.spelling == "":
                 if exogenous_name is not None:
-                    result.append('_' + exogenous_name)
+                    result.append(b'_' + exogenous_name.encode())
                     assert not exogenous_name.startswith("const"), "Qualifiers leaking into names!"
                     special = True
             else:
                 assert not node.spelling.startswith("const"), "Qualifiers leaking into names!"
-                result.append(node.spelling)
+                result.append(node.spelling.encode())
 
-            result.append('=')
+            result.append(b'=')
 
             for c in node.get_children():
                 if c.kind.is_attribute():
@@ -1388,7 +1399,7 @@ class FrameworkParser(object):
                 is_bf = c.is_bitfield()
                 bf_width = -1 if not is_bf else c.get_bitfield_width()
                 if is_bf and bf_width != -1:
-                    result.append('b%d' % (bf_width,))
+                    result.append(b'b%d' % (bf_width,))
                 else:
                     c_type = c.type
                     t, s = self.__typestr_from_type(c_type)
@@ -1399,7 +1410,7 @@ class FrameworkParser(object):
                     result.append(t)
 
             result.append(objc._C_STRUCT_E)
-            typestr, special = ''.join(result), special
+            typestr, special = b''.join(result), special
         # unions
         elif node.kind == CursorKind.UNION_DECL:
             result = [objc._C_UNION_B]

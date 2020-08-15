@@ -182,12 +182,12 @@ def merge_definition_lists(defs):
             typestr += '@:'
             for a in meth['args']:
                 typestr += a['typestr']
-            lst.append({'arch': arch, 'typestr': BStr(typestr)})
+            lst.append({'arch': arch, 'typestr': typestr})
 
     result = []
     for selector, typestr in all_methods.items():
         for v in typestr:
-            v['typestr'] = BStr(v['typestr'])
+            v['typestr'] = v['typestr']
         typestr = merge_defs(typestr, 'typestr')['typestr']
         result.append(FuncCall('objc.selector')(None, BStr(selector), typestr, isRequired=False))
 
@@ -217,15 +217,15 @@ def extract_informal_protocols(exceptions, headerinfo):
         if 'retval' in meth:
             typestr = meth['retval']['typestr']
         else:
-            typestr = 'v'
-        typestr += '@:'
+            typestr = b'v'
+        typestr += b'@:'
         for a in meth['args']:
             typestr += a['typestr']
-        return selector(None, BStr(meth['selector']), BStr(typestr), isRequired=False)
+        return selector(None, BStr(meth['selector']), typestr, isRequired=False)
 
     for name in found:
         if len(found[name]) == 1:
-            result[name] = informal_protocol(name, map(calc_selector, found[name][0]['methods']))
+            result[name] = informal_protocol(name, list(map(calc_selector, found[name][0]['methods'])))
 
         else:
             # FIXME: This is too simple, need to actually merge the list of definitions
@@ -251,9 +251,9 @@ def _cleanup_callable_metadata(metadata):
                 rec['type'] = rec['type'][0]
 
         if isinstance(rec['type'], (list, tuple)):
-            rec['type'] = sel32or64(*map(BStr, rec['type']))
+            rec['type'] = sel32or64(*rec['type'])
         else:
-            rec['type'] = BStr(rec['type'])
+            rec['type'] = rec['type']
         return rec
 
     metadata['retval'] = cleanup_type(dict(metadata['retval']))
@@ -354,9 +354,9 @@ def calc_func_proto(exc, info, arch):
         if 'sel_of_type' in arg:
             v = arg['sel_of_type']
             if isinstance(v, (list, tuple)):
-                v = sel32or64(BStr(v[0]), BStr(v[1]))
+                v = sel32or64(v[0], v[1])
             else:
-                v = BStr(v)
+                v = v
             arg['sel_of_type'] = v
 
         if 'block' in arg:
@@ -369,7 +369,7 @@ def calc_func_proto(exc, info, arch):
             # XXX: This is suboptimal at best
             arg['callable'] = _cleanup_callable_metadata(dict(arg['function']))
             del arg['function']
-            print arg['callable']
+            print(arg['callable'])
 
         for k in arg:
             if isinstance(arg[k], list):
@@ -381,7 +381,7 @@ def calc_func_proto(exc, info, arch):
     if not metadata['arguments']:
         del metadata['arguments']
 
-    return BStr(''.join(types)), metadata
+    return b''.join(types), metadata
 
 
 def extract_functions(exceptions, headerinfo):
@@ -394,7 +394,7 @@ def extract_functions(exceptions, headerinfo):
                 if excinfo[name].get('ignore', False):
                     continue
 
-            print name
+            print(name)
             typestr, metadata = calc_func_proto(excinfo.get(name, {}), value, info['arch'])
             value = {'typestr': typestr, 'metadata': metadata, 'arch': info['arch']}
 
@@ -416,7 +416,7 @@ def extract_functions(exceptions, headerinfo):
         try:
             info = merge_defs(value, 'typestr')
         except:
-            print "[%d/%d] %s" % (idx + 1, len(functions), name)
+            print("[%d/%d] %s" % (idx + 1, len(functions), name))
             raise
         if value[0]['metadata']:
             result[name] = (info['typestr'], '', value[0]['metadata'])
@@ -432,10 +432,10 @@ def extract_opaque(exceptions):
     create_pointer = FuncCall("objc.createOpaquePointerType")
     for name, info in excinfo.items():
         if 'typestr' not in info:
-            print "WARNING: Skip %r, no typestr found" % (name,)
+            print("WARNING: Skip %r, no typestr found" % (name,))
             continue
 
-        opaque[name] = create_pointer(name, BStr(info['typestr']))
+        opaque[name] = create_pointer(name, info['typestr'])
 
     return opaque
 
@@ -482,7 +482,7 @@ def extract_opaque_cftypes(exceptions, headerinfo):
     create_pointer = FuncCall("objc.createOpaquePointerType")
     for name, values in sorted(cftypes.items()):
         typestr = merge_defs(values, 'typestr')['typestr']
-        result[name] = create_pointer(name, BStr(typestr))
+        result[name] = create_pointer(name, typestr)
 
     return result
 
@@ -509,7 +509,7 @@ def extract_aliases(exceptions, headerinfo):
 
     result = {}
     for name, values in sorted(aliases.items()):
-        print name
+        print(name)
         alias = merge_defs(values, 'alias')['alias']
 
         result[name] = alias
@@ -552,7 +552,7 @@ def extract_cftypes(exceptions, headerinfo):
         exc = excinfo.get(name, {})
 
         result.append(
-            (name, BStr(value['typestr']), exc.get('gettypeid_func'), exc.get('tollfree'))
+            (name, value['typestr'], exc.get('gettypeid_func'), exc.get('tollfree'))
         )
 
     for name, value in excinfo.items():
@@ -564,7 +564,7 @@ def extract_cftypes(exceptions, headerinfo):
             continue
 
         result.append(
-            (name, BStr(value['typestr']), value.get('gettypeid_func'), value.get('tollfree'))
+            (name, value['typestr'], value.get('gettypeid_func'), value.get('tollfree'))
         )
 
     return result
@@ -653,7 +653,7 @@ def extract_enums(exceptions, headerinfo):
                 if excinfo[name].get('ignore', False):
                     continue
                 if excinfo[name].get('value'):
-                    if isinstance(excinfo[name]['value'], (str, unicode)):
+                    if isinstance(excinfo[name]['value'], str):
                         result[name] = [{'value': BStr(excinfo[name]['value']), 'arch': None}]
                     else:
                         result[name] = [{'value': excinfo[name]['value'], 'arch': None}]
@@ -682,7 +682,7 @@ def extract_enums(exceptions, headerinfo):
         try:
             result[name] = merge_defs(result[name], 'value')
         except MergeNeededException:
-            print name
+            print(name)
 
             if name.endswith('Count'):
                 # A number of headers define a kFooCount value that is
@@ -720,7 +720,7 @@ def calc_type(choices):
         # FIXME: investigate why this is needed (Collabortation wrappers)
         return choices
     if len(choices) == 1:
-        return BStr(iter(choices).next())
+        return BStr(next(iter(choices)))
 
     else:
         if isinstance(choices, list):
@@ -728,7 +728,7 @@ def calc_type(choices):
 
         else:
             ch = []
-            for k, v in choices.iteritems():
+            for k, v in choices.items():
                 for e in v:
                     ch.append({'value': BStr(k), 'arch': e})
 
@@ -833,31 +833,31 @@ def merge_method_info(clsname, selector, class_method, infolist, exception, only
 
         for k in ('type_modifier', 'sel_of_type'):
             if k in result['retval']:
-                result['retval'][k] = BStr(result['retval'][k])
+                result['retval'][k] = result['retval'][k]
 
         if 'callable' in result['retval']:
             this_callable = result['retval']['callable']
             for value in itertools.chain([this_callable.get('retval', {})],
                                          this_callable.get('arguments', {}).values()):
                 if isinstance(value['type'], str):
-                    value['type'] = BStr(value['type'])
+                    value['type'] = value['type']
                 else:
-                    value['type'] = sel32or64(BStr(value['type'][0]), BStr(value['type'][1]))
+                    value['type'] = sel32or64(value['type'][0], value['type'][1])
 
         if not result['retval']:
             del result['retval']
 
     if 'arguments' in result:
-        for i, a in result['arguments'].items():
+        for i, a in list(result['arguments'].items()):
             if 'type' in a:
                 a['type'] = calc_type(a['type'])
 
             for k in ('type_modifier', 'sel_of_type'):
                 if k in a:
                     if isinstance(a[k], (list, tuple)):
-                        a[k] = sel32or64(BStr(a[k][0]), BStr(a[k][1]))
+                        a[k] = sel32or64(a[k][0], a[k][1])
                     else:
-                        a[k] = BStr(a[k])
+                        a[k] = a[k]
 
             if 'callable' in a:
                 this_callable = a['callable']
@@ -867,13 +867,13 @@ def merge_method_info(clsname, selector, class_method, infolist, exception, only
                         raise ValueError("Missing 'type' in argument/retval spec for %s %s" % (
                             infolist[0]['class'], infolist[0]['selector']))
                     if isinstance(value['type'], str):
-                        value['type'] = BStr(value['type'])
+                        value['type'] = value['type']
 
                     elif isinstance(value['type'], WrappedCall):
                         pass
 
                     else:
-                        value['type'] = sel32or64(BStr(value['type'][0]), BStr(value['type'][1]))
+                        value['type'] = sel32or64(value['type'][0], value['type'][1])
 
             if not a:
                 del result['arguments'][i]
@@ -943,7 +943,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
                     meth = {
                         "selector": setter,
                         "retval": {
-                            "typestr": "v",
+                            "typestr": b"v",
                             "typestr_special": False
                         },
                         "args": [
@@ -968,7 +968,7 @@ def extract_method_info(exceptions, headerinfo, section='classes'):
         else:
             use_key = key
 
-        print key[0], key[1], key[2]
+        print(key[0], key[1], key[2])
         result[key] = merge_method_info(key[0], key[1], key[2], result[key],
                                         exception_method(excinfo, use_key), section == 'classes')
 
@@ -1025,8 +1025,8 @@ def extract_structs(exceptions, headerinfo):
     for name, values in structs.items():
         fieldnames = values[0]['fieldnames']
         for v in values:
-            v['typestr'] = BStr(v['typestr'])
-        print name
+            v['typestr'] = v['typestr']
+        print(name)
         typestr = merge_defs(values, 'typestr')['typestr']
         alias = values[0]['alias']
         pack = values[0]['pack']
@@ -1035,7 +1035,7 @@ def extract_structs(exceptions, headerinfo):
             #fieldnames = map(str, fieldnames)
             fieldnames = [str(x[0]) for x in fieldnames]
         else:
-            fieldnames = map(str, fieldnames)
+            fieldnames = list(map(str, fieldnames))
 
         if alias is None:
             if pack is None:
@@ -1050,7 +1050,7 @@ def extract_structs(exceptions, headerinfo):
 
 def emit_structs(fp, structs):
     if structs:
-        print >>fp, "misc.update(%r)" % (structs,)
+        print("misc.update(%r)" % (structs,), file=fp)
 
 
 def emit_externs(fp, externs):
@@ -1087,7 +1087,7 @@ def emit_enums(fp, enums):
             if isinstance(v['value'], WrappedCall):
                 expr[k] = v['value']
 
-            elif isinstance(v['value'], unicode):
+            elif isinstance(v['value'], str):
                 expr[k] = UStr(v['value'])
 
             else:
@@ -1120,22 +1120,22 @@ def emit_method_info(fp, method_info):
 
 def emit_informal_protocols(fp, protocol_info):
     if protocol_info:
-        print >>fp, "protocols=%r" % (protocol_info,)
+        print("protocols=%r" % (protocol_info,), file=fp)
 
 
 def emit_functions(fp, functions):
     if functions:
-        print >>fp, "functions=%r" % (functions,)
+        print("functions=%r" % (functions,), file=fp)
 
 
 def emit_cftypes(fp, cftypes):
     if cftypes:
-        print >>fp, "cftypes=%r" % (cftypes,)
+        print("cftypes=%r" % (cftypes,), file=fp)
 
 
 def emit_opaque(fp, opaque):
     if opaque:
-        print >>fp, "misc.update(%r)" % (opaque,)
+        print("misc.update(%r)" % (opaque,), file=fp)
 
 
 def extract_literal(exceptions, headerinfo):
@@ -1162,7 +1162,7 @@ def extract_literal(exceptions, headerinfo):
                         value = BStr(value['value'])
 
             else:
-                if isinstance(value, (str, unicode)):
+                if isinstance(value, str):
                     if is_unicode:
                         value = UStr(value)
                     else:
@@ -1182,16 +1182,16 @@ def extract_literal(exceptions, headerinfo):
 
 
 def emit_literal(fp, literals):
-    print >>fp, "misc.update(%r)" % (literals,)
+    print("misc.update(%r)" % (literals,), file=fp)
 
 
 def emit_expressions(fp, expressions):
-    print >>fp, "expressions = %r" % (expressions,)
+    print("expressions = %r" % (expressions,), file=fp)
 
 
 def emit_aliases(fp, aliases):
     if aliases:
-        print >>fp, "aliases = %r" % (aliases,)
+        print("aliases = %r" % (aliases,), file=fp)
 
 
 def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):

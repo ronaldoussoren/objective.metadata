@@ -11,8 +11,20 @@ import objc
 import collections
 from clang.cindex import Cursor, CursorKind, Type, TypeKind, SourceRange
 import os
+from itertools import chain
 
 from ctypes import c_int, c_uint
+
+# Add missing bindings...
+CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
+CursorKind.REQUIRESSUPER_ATTR = CursorKind(430)
+CursorKind.EXPLICITPROTOCOLIMPL_ATTR = CursorKind(433)
+CursorKind.OBJCDESIGNATEDINITIALIZER_ATTR = CursorKind(434)
+CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
+CursorKind.FLAGENUM_ATTR = CursorKind(437)
+
+
+
 
 # Add ctypes wrappers for a bunch of functions not yet added to the real libclang python binding.
 clang.cindex.register_function(clang.cindex.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False)
@@ -80,14 +92,14 @@ class ObjcDeclQualifier(object):
     def from_encode_string(string):
         val = ObjcDeclQualifier.Flag_None
         string = string or ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.iteritems():
+        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
             if encode_string in string:
                 val = val | value
         return ObjcDeclQualifier(val)
 
     def to_encode_string(self):
         string = ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.iteritems():
+        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
             if bool(self.value & value):
                 string = string + encode_string
         return string
@@ -517,9 +529,10 @@ __typekind_to_objc_types_map_32 = {
 }
 
 __typekind_by_arch_map = {
-    "x86_64": dict(__typekind_to_objc_types_map_common.items() + __typekind_to_objc_types_map_64.items()),
-    "ppc64": dict(__typekind_to_objc_types_map_common.items() + __typekind_to_objc_types_map_64.items()),
-    "i386": dict(__typekind_to_objc_types_map_common.items() + __typekind_to_objc_types_map_32.items()),
+    "arm64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
+    "x86_64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
+    "ppc64": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_64.items())),
+    "i386": dict(chain(__typekind_to_objc_types_map_common.items(), __typekind_to_objc_types_map_32.items())),
 }
 
 
@@ -683,7 +696,7 @@ def _cursor_get_property_attributes(self):
     attr_flags = clang.cindex.conf.lib.clang_Cursor_getObjCPropertyAttributes(self, 0)
 
     attrs = set()
-    for flag, attr in __attr_flag_dict.iteritems():
+    for flag, attr in __attr_flag_dict.items():
         if attr_flags & flag:
             attrs.add(attr)
 
