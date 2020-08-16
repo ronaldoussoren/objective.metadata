@@ -1280,15 +1280,20 @@ class FrameworkParser(object):
         @rtype : dict
         """
         if decl.result_type.valid_type is None:
-            typestr, special = "@", False
+            typestr, special = objc._C_ID, False
         else:
             typestr, special = self.__get_typestr(decl.result_type.valid_type)
+
+        extras = {}
+        type_name = self.get_typename(decl.result_type)
+        if type_name is not None:
+            extras["type_name"] = type_name
 
         meth = {
             "selector": decl.spelling,
             "visibility": "public",
             "class_method": bool(decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL),
-            "retval": {"typestr": typestr, "typestr_special": special},
+            "retval": {"typestr": typestr, "typestr_special": special, **extras},
             "args": [],
         }
         self._update_availability(meth, decl)
@@ -1298,7 +1303,7 @@ class FrameworkParser(object):
 
         for a in decl.get_arguments():
             if a is None:
-                typestr, special = "@", False
+                typestr, special = objc._C_ID, False
             else:
                 typestr, special = self.__get_typestr(a.type)
 
@@ -1307,6 +1312,10 @@ class FrameworkParser(object):
                 extras["null_accepted"] = False
             elif a.type.nullability == NullabilityKind.NULLABLE:
                 extras["null_accepted"] = True
+
+            type_name = self.get_typename(decl.result_type)
+            if type_name is not None:
+                extras["type_name"] = type_name
 
             meth["args"].append(
                 {"typestr": typestr, "typestr_special": special, **extras}
@@ -1347,6 +1356,38 @@ class FrameworkParser(object):
             return value
         value = value.lower().rstrip("l").rstrip("u")
         return int(value, 0)
+
+    def get_typename(self, obj):
+        """
+        Return the name of a type when that name is relevant
+        for PyObjC (class name, typedef name).
+        """
+        is_cursor = isinstance(obj, Cursor)
+        is_type = (not is_cursor) and isinstance(obj, Type)
+
+        if is_type:
+            if obj.kind == TypeKind.ATTRIBUTED:
+                return self.get_typename(obj.modified_type)
+
+            primitive_objc_type_for_arch = obj.kind.objc_type_for_arch(self.arch)
+            if primitive_objc_type_for_arch == objc._C_ID:
+                # This doesn't work yet: return 'id' instead of the
+                # name of the class
+                return obj.spelling.rstrip("*").strip()
+
+            if obj.kind == TypeKind.TYPEDEF:
+                # This needs to check if the typedef is for an interesting type:
+                # - struct
+                # - enum
+                return obj.spelling
+
+            # Missing: Pointer to one of the above should return the name of
+            # the pointed-to type.
+
+            return None
+
+        else:
+            return None
 
     def __get_typestr(self, obj, exogenous_name=None):
         """
