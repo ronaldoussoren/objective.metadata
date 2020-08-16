@@ -73,6 +73,12 @@ def dump_node(node, indent=""):
         header.append("encoding=%r" % (node.objc_type_encoding,))
     header.append("is_attribute=%r" % (node.kind.is_attribute()))
     print(indent + " ".join(header))
+    try:
+        print(indent + "availability:", node.availability)
+    except AttributeError:
+        pass
+
+    print(indent + "platform avail", node.platform_availability)
     if node.type:
         print(indent + "  type:")
         dump_type(node.type, indent + "    ")

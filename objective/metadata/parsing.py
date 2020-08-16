@@ -345,6 +345,7 @@ class FrameworkParser(object):
         self.typedefs[name] = typedef
 
     def add_enumeration(self, node):
+        # Need to do something with availability information
         name = node.spelling
         if name is None or name == "":
             name = "<anon>"
@@ -443,7 +444,8 @@ class FrameworkParser(object):
         #    and typestr != b""
         #    and typestr != b"?"
         # ), "Bad params"
-        self.externs[name] = {"typestr": typestr}
+        self.externs[name] = extern = {"typestr": typestr}
+        self._update_availability(extern, node)
         if self.verbose:
             print("Added extern: " + name + " typestr: " + typestr)
 
@@ -457,6 +459,7 @@ class FrameworkParser(object):
         funcspec = node.get_function_specifiers()
 
         self.functions[node.spelling] = func = {"retval": {"typestr": None}, "args": []}
+        self._update_availability(func, node)
 
         # Does it follow the CF returns-retained pattern?
         if "Create" in name:
@@ -595,6 +598,7 @@ class FrameworkParser(object):
             "methods": [],
             "properties": [],
         }
+        self._update_availability(protocol, node)
 
         for decl in node.get_children() or []:
             if (
@@ -633,6 +637,7 @@ class FrameworkParser(object):
             "methods": [],
             "properties": [],
         }
+        self._update_availability(protocol, node)
 
         for decl in node.get_children() or []:
             if (
@@ -662,10 +667,61 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added informal protocol: " + node.spelling)
 
-    def add_class(self, node):
-        from .clang_tools import dump_node
+    def _update_availability(self, meta, node):
+        def encode_version(version):
+            if version.major == -1:
+                raise ValueError("Cannot encode version {version}")
+            elif version.minor == -1:
+                # "TO BE DEPRECATED"
+                return version.major * 10000
 
-        dump_node(node)
+            if version.minor < 9:
+                return version.major * 100 + version.minor
+
+            else:
+                return (
+                    version.major * 10000
+                    + version.minor * 100
+                    + (version.subminor if version.subminor != -1 else 0)
+                )
+
+        try:
+            availability = node.platform_availability
+        except AttributeError:
+            return
+
+        if availability["always_unavailable"]:
+            suggestion = availability["unavailable_message"]
+            meta["unavailable"] = True
+            meta["suggestion"] = suggestion if suggestion else "not available"
+
+        if availability["always_deprecated"]:
+            # Deprecated without version number, assume this is deprecated starting
+            # at the first darwin-based macOS (10.0)
+            meta["deprecated"] = 10_00
+
+        try:
+            platform = availability["platform"]["macos"]
+
+        except KeyError:
+            pass
+
+        else:
+            if platform["introduced"] is not None:
+                meta["introcued"] = encode_version(platform["introduced"])
+            if platform["deprecated"] is not None:
+                meta["deprecated"] = encode_version(platform["deprecated"])
+                if platform["message"]:
+                    meta["deprecated_message"] = platform["message"]
+            if platform["unavailable"]:
+                meta["unavailable"] = True
+                meta["suggestion"] = (
+                    platform["message"] if platform["message"] else "not available"
+                )
+
+    def add_class(self, node):
+        # from .clang_tools import dump_node
+        # dump_node(node)
 
         if node.spelling in self.classes:
             class_info = self.classes[node.spelling]
@@ -686,6 +742,7 @@ class FrameworkParser(object):
                 "categories": [],
                 "properties": [],
             }
+            self._update_availability(class_info, node)
 
         for proto_ref in node.get_adopted_protocol_nodes():
             proto_str = proto_ref.referenced.spelling
@@ -774,6 +831,7 @@ class FrameworkParser(object):
                         "attributes": decl.get_property_attributes(),
                     }
                 )
+                self._update_availability(class_info["properties"][-1], decl)
 
             else:
                 # Declaration can contain nested definitions that are picked
@@ -1233,6 +1291,7 @@ class FrameworkParser(object):
             "retval": {"typestr": typestr, "typestr_special": special},
             "args": [],
         }
+        self._update_availability(meth, decl)
 
         if decl.is_variadic:
             meth["variadic"] = True
@@ -1253,6 +1312,7 @@ class FrameworkParser(object):
                 {"typestr": typestr, "typestr_special": special, **extras}
             )
 
+        self._update_availability(meth, decl)
         return meth
 
     def __includes_string(self):

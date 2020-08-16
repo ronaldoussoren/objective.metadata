@@ -8,7 +8,7 @@ than "pythonic" but, hey, I'm an ObjC developer first...
 
 import collections
 import os
-from ctypes import c_int, c_uint
+from ctypes import POINTER, byref, c_int, c_uint
 from itertools import chain
 
 import clang
@@ -18,9 +18,11 @@ from clang.cindex import (
     Cursor,
     CursorKind,
     SourceRange,
+    Structure,
     TranslationUnit,
     Type,
     TypeKind,
+    _CXString,
 )
 
 # Add missing bindings...
@@ -1000,3 +1002,98 @@ def _type_modified_type(self):
 
 
 Type.modified_type = property(fget=_type_modified_type)
+
+
+class Version(Structure):
+    _fields_ = [("major", c_int), ("minor", c_int), ("subminor", c_int)]
+
+    def __repr__(self):
+        if self.subminor == -1:
+            return f"{self.major}.{self.minor}"
+        else:
+            return f"{self.major}.{self.minor}.{self.subminor}"
+
+
+class PlatformAvailability(Structure):
+    """
+    Availability information
+    """
+
+    _fields_ = [
+        ("platform", _CXString),
+        ("introduced", Version),
+        ("deprecated", Version),
+        ("obsoleted", Version),
+        ("unavailable", c_int),
+        ("message", _CXString),
+    ]
+
+
+clang.cindex.register_function(
+    clang.cindex.conf.lib,
+    (
+        "clang_getCursorPlatformAvailability",
+        [
+            Cursor,
+            POINTER(c_int),
+            POINTER(_CXString),
+            POINTER(c_int),
+            POINTER(_CXString),
+            POINTER(PlatformAvailability),
+        ],
+        c_int,
+    ),
+    False,
+)
+
+clang.cindex.register_function(
+    clang.cindex.conf.lib,
+    ("clang_disposeCXPlatformAvailability", [POINTER(PlatformAvailability)], None),
+    False,
+)
+
+
+def _cursor_platform_availability(self):
+    always_deprecated = c_int()
+    deprecated_message = _CXString()
+    always_unavailable = c_int()
+    unavailable_message = _CXString()
+    availability_size = 10
+    availability = (PlatformAvailability * availability_size)()
+
+    r = clang.cindex.conf.lib.clang_getCursorPlatformAvailability(
+        self,
+        byref(always_deprecated),
+        byref(deprecated_message),
+        byref(always_unavailable),
+        byref(unavailable_message),
+        availability,
+        availability_size,
+    )
+
+    result = {
+        "always_deprecated": bool(always_deprecated.value),
+        "deprecated_message": _CXString.from_result(deprecated_message),
+        "always_unavailable": bool(always_unavailable.value),
+        "unavailable_message": _CXString.from_result(unavailable_message),
+        "platform": {},
+    }
+    for i in range(r):
+        result["platform"][_CXString.from_result(availability[i].platform)] = {
+            "introduced": availability[i].introduced
+            if availability[i].introduced.major != -1
+            else None,
+            "deprecated": availability[i].deprecated
+            if availability[i].deprecated.major != -1
+            else None,
+            "obsoleted": availability[i].obsoleted
+            if availability[i].obsoleted.major != -1
+            else None,
+            "unavailable": bool(availability[i].unavailable),
+            "message": _CXString.from_result(availability[i].message),
+        }
+
+    return result
+
+
+Cursor.platform_availability = property(fget=_cursor_platform_availability)
