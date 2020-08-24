@@ -195,9 +195,9 @@ def main():
     args = parser.parse_args()
 
     if getattr(args, "libclang", None):
-        import clang.cindex
+        from .vendored import clang
 
-        clang.cindex.Config.set_library_file(args.libclang)
+        clang.Config.set_library_file(args.libclang)
 
     for info in parse_ini(args.ini_file, args.ini_section):
         if args.command == "scan":

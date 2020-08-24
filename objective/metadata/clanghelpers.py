@@ -11,9 +11,10 @@ import os
 from ctypes import POINTER, byref, c_int, c_uint
 from itertools import chain
 
-import clang
 import objc
-from clang.cindex import (
+
+from .vendored import clang
+from .vendored.clang import (
     BaseEnumeration,
     Cursor,
     CursorKind,
@@ -42,42 +43,40 @@ TypeKind.ATTRIBUTED = TypeKind(163)
 
 # Add ctypes wrappers for a bunch of functions not
 # yet added to the real libclang python binding.
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False
+clang.register_function(
+    clang.conf.lib, ("clang_getCursorLinkage", [Cursor], c_int), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_Cursor_isObjCOptional", [Cursor], c_uint), False
+clang.register_function(
+    clang.conf.lib, ("clang_Cursor_isObjCOptional", [Cursor], c_uint), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_getCXXAccessSpecifier", [Cursor], c_int), False
+clang.register_function(
+    clang.conf.lib, ("clang_getCXXAccessSpecifier", [Cursor], c_int), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_Cursor_isVariadic", [Cursor], c_uint), False
+clang.register_function(
+    clang.conf.lib, ("clang_Cursor_isVariadic", [Cursor], c_uint), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib,
-    ("clang_Cursor_getObjCDeclQualifiers", [Cursor], c_uint),
-    False,
+clang.register_function(
+    clang.conf.lib, ("clang_Cursor_getObjCDeclQualifiers", [Cursor], c_uint), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib,
+clang.register_function(
+    clang.conf.lib,
     ("clang_Cursor_getObjCPropertyAttributes", [Cursor, c_uint], c_uint),
     False,
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib,
+clang.register_function(
+    clang.conf.lib,
     ("clang_getCursorResultType", [Cursor], Type, Type.from_result),
     False,
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_Type_getNullability", [Type], c_uint), False
+clang.register_function(
+    clang.conf.lib, ("clang_Type_getNullability", [Type], c_uint), False
 )
-clang.cindex.register_function(
-    clang.cindex.conf.lib, ("clang_Type_getModifiedType", [Type], Type), False
+clang.register_function(
+    clang.conf.lib, ("clang_Type_getModifiedType", [Type], Type), False
 )
 
 # objc module was missing this:
-objc._C_BYREF = "R"
+objc._C_BYREF = b"R"
 
 ###
 # A Class to hold qualifiers
@@ -312,7 +311,7 @@ class AbstractClangVisitor(object):
 
 
 ###
-# Additions to clang.cindex.Type
+# Additions to clang.Type
 ###
 
 
@@ -367,7 +366,7 @@ def _type_argument_types(self):
 
         def __len__(self):
             if self.length is None:
-                self.length = clang.cindex.conf.lib.clang_getNumArgTypes(self.parent)
+                self.length = clang.conf.lib.clang_getNumArgTypes(self.parent)
 
             return self.length
 
@@ -384,7 +383,7 @@ def _type_argument_types(self):
                     "Index greater than container length: " "%d > %d" % (key, len(self))
                 )
 
-            result = clang.cindex.conf.lib.clang_getArgType(self.parent, key)
+            result = clang.conf.lib.clang_getArgType(self.parent, key)
             if result.kind == TypeKind.INVALID:
                 raise IndexError("Argument could not be retrieved.")
 
@@ -399,7 +398,7 @@ Type.argument_types = _type_argument_types
 def _type_is_function_variadic(self):
     """Determine whether this function Type is a variadic function type."""
     # assert self.kind == TypeKind.FUNCTIONPROTO
-    return clang.cindex.conf.lib.clang_isFunctionTypeVariadic(self)
+    return clang.conf.lib.clang_isFunctionTypeVariadic(self)
 
 
 Type.is_function_variadic = _type_is_function_variadic
@@ -499,7 +498,7 @@ def _type_element_count(self):
 
     If the Type is not an array or vector, this returns None
     """
-    result = clang.cindex.conf.lib.clang_getNumElements(self)
+    result = clang.conf.lib.clang_getNumElements(self)
     if result < 0:
         return None
 
@@ -509,7 +508,7 @@ def _type_element_count(self):
 Type.element_count = property(fget=_type_element_count)
 
 ###
-# Additions to clang.cindex.TypeKind
+# Additions to clang.TypeKind
 ###
 
 # noinspection PyProtectedMember
@@ -623,7 +622,7 @@ def _typekind_objc_type_for_arch(self, arch):
 TypeKind.objc_type_for_arch = _typekind_objc_type_for_arch
 
 ###
-# Additions to clang.cindex.Cursor
+# Additions to clang.Cursor
 ###
 
 
@@ -755,15 +754,15 @@ def _cursor_get_first_child(self):
     child_holder = []
 
     def first_child_visitor(child, parent, holder):
-        assert child != clang.cindex.conf.lib.clang_getNullCursor()
+        assert child != clang.conf.lib.clang_getNullCursor()
         assert parent != child
         # Create reference to TU so it isn't GC'd before Cursor.
         child._tu = self._tu
         holder.append(child)
         return 0  # CXChildVisit_Break
 
-    clang.cindex.conf.lib.clang_visitChildren(
-        self, clang.cindex.callbacks["cursor_visit"](first_child_visitor), child_holder
+    clang.conf.lib.clang_visitChildren(
+        self, clang.callbacks["cursor_visit"](first_child_visitor), child_holder
     )
 
     return None if len(child_holder) == 0 else child_holder[0]
@@ -791,7 +790,7 @@ def _cursor_get_property_attributes(self):
     if self.kind != CursorKind.OBJC_PROPERTY_DECL:
         return None
 
-    attr_flags = clang.cindex.conf.lib.clang_Cursor_getObjCPropertyAttributes(self, 0)
+    attr_flags = clang.conf.lib.clang_Cursor_getObjCPropertyAttributes(self, 0)
 
     attrs = set()
     for flag, attr in __attr_flag_dict.items():
@@ -821,18 +820,16 @@ Cursor.referenced_distinct = property(
     else self.referenced
 )
 Cursor.linkage = property(
-    fget=lambda self: LinkageKind.from_id(
-        clang.cindex.conf.lib.clang_getCursorLinkage(self)
-    )
+    fget=lambda self: LinkageKind.from_id(clang.conf.lib.clang_getCursorLinkage(self))
 )
 Cursor.is_virtual = property(
-    fget=lambda self: clang.cindex.conf.lib.clang_CXXMethod_isVirtual(self)
+    fget=lambda self: clang.conf.lib.clang_CXXMethod_isVirtual(self)
 )
 Cursor.is_optional_for_protocol = property(
-    fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isObjCOptional(self))
+    fget=lambda self: bool(clang.conf.lib.clang_Cursor_isObjCOptional(self))
 )
 Cursor.is_variadic = property(
-    fget=lambda self: bool(clang.cindex.conf.lib.clang_Cursor_isVariadic(self))
+    fget=lambda self: bool(clang.conf.lib.clang_Cursor_isVariadic(self))
 )
 Cursor.type_valid = property(
     fget=lambda self: None if self.type.kind == TypeKind.INVALID else self.type
@@ -848,7 +845,7 @@ def _cursor_result_type(self):
     # See note above;  Yes, we are *replacing* the
     # implementation of result_type from libclang
     if not hasattr(self, "_result_type"):
-        self._result_type = clang.cindex.conf.lib.clang_getCursorResultType(self)
+        self._result_type = clang.conf.lib.clang_getCursorResultType(self)
     return self._result_type
 
 
@@ -927,7 +924,7 @@ def _cursor_get_objc_decl_qualifiers(self):
         CursorKind.PARM_DECL,
     ]:
         return None
-    val = clang.cindex.conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
+    val = clang.conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
     return ObjcDeclQualifier(val)
 
 
@@ -964,11 +961,11 @@ def _cursor_enum_value(self):
             TypeKind.ULONGLONG,
             TypeKind.UINT128,
         ):
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
+            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
                 self
             )
         else:
-            self._enum_value = clang.cindex.conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
+            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
                 self
             )
     return self._enum_value
@@ -990,7 +987,7 @@ NullabilityKind.INVALID = NullabilityKind(3)
 
 def _type_nullability(self):
     if not hasattr(self, "_nullability"):
-        self._nullability = clang.cindex.conf.lib.clang_Type_getNullability(self)
+        self._nullability = clang.conf.lib.clang_Type_getNullability(self)
 
     return NullabilityKind.from_id(self._nullability)
 
@@ -999,7 +996,7 @@ Type.nullability = property(fget=_type_nullability)
 
 
 def _type_modified_type(self):
-    return clang.cindex.conf.lib.clang_Type_getModifiedType(self)
+    return clang.conf.lib.clang_Type_getModifiedType(self)
 
 
 Type.modified_type = property(fget=_type_modified_type)
@@ -1030,8 +1027,8 @@ class PlatformAvailability(Structure):
     ]
 
 
-clang.cindex.register_function(
-    clang.cindex.conf.lib,
+clang.register_function(
+    clang.conf.lib,
     (
         "clang_getCursorPlatformAvailability",
         [
@@ -1047,8 +1044,8 @@ clang.cindex.register_function(
     False,
 )
 
-clang.cindex.register_function(
-    clang.cindex.conf.lib,
+clang.register_function(
+    clang.conf.lib,
     ("clang_disposeCXPlatformAvailability", [POINTER(PlatformAvailability)], None),
     False,
 )
@@ -1062,7 +1059,7 @@ def _cursor_platform_availability(self):
     availability_size = 10
     availability = (PlatformAvailability * availability_size)()
 
-    r = clang.cindex.conf.lib.clang_getCursorPlatformAvailability(
+    r = clang.conf.lib.clang_getCursorPlatformAvailability(
         self,
         byref(always_deprecated),
         byref(deprecated_message),

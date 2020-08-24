@@ -1,4 +1,4 @@
-import clang.cindex
+from .vendored import clang
 
 
 class NodeVisitor(object):
@@ -50,7 +50,7 @@ def dump_type(node, indent=""):
     print(indent + "get_canonical:", node.get_canonical())
     # print(dir(node))
     canonical = node.get_canonical()
-    if canonical is not None and node.kind is clang.cindex.TypeKind.TYPEDEF:
+    if canonical is not None and node.kind is clang.TypeKind.TYPEDEF:
         dump_type(node.get_canonical(), indent + "  ")
     print(indent + "get_declaration:", node.get_declaration())
     print(indent + "get_pointee:", node.get_pointee())

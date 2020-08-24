@@ -8,7 +8,8 @@ import re
 import sys
 
 import objc
-from clang.cindex import (
+
+from .vendored.clang import (
     Config,
     Cursor,
     CursorKind,
@@ -735,7 +736,7 @@ class FrameworkParser(object):
 
         else:
             if platform["introduced"] is not None:
-                meta["introcued"] = encode_version(platform["introduced"])
+                meta["introduced"] = encode_version(platform["introduced"])
             if platform["deprecated"] is not None:
                 meta["deprecated"] = encode_version(platform["deprecated"])
                 if platform["message"]:
