@@ -77,6 +77,7 @@ class FrameworkParser(object):
 
         self.headers = set()
 
+        self.enum_type = {}
         self.enum_values = {}
         self.structs = {}
         self.externs = {}
@@ -157,6 +158,7 @@ class FrameworkParser(object):
             "headers": sorted(self.headers),
             "definitions": {
                 "enum": self.enum_values,
+                "enum_type": self.enum_type,
                 "structs": self.structs,
                 "externs": self.externs,
                 "literals": self.literals,
@@ -353,17 +355,21 @@ class FrameworkParser(object):
         value_count = 0
 
         if node.kind == CursorKind.ENUM_CONSTANT_DECL:
-            self.enum_values[name] = node.enum_value
+            self.enum_values[name] = {"value": node.enum_value}
             value_count = 1
 
         elif node.kind == CursorKind.ENUM_DECL:
+            self.enum_type[node.spelling] = {"typestr": self.__get_typestr(node)[0]}
             for val in filter(
                 lambda x: x.kind == CursorKind.ENUM_CONSTANT_DECL,
                 node.get_children() or [],
             ):
                 # Add the enum to the name -> value mapping
                 val_name = val.spelling
-                self.enum_values[val_name] = val.enum_value
+                self.enum_values[val_name] = {
+                    "value": val.enum_value,
+                    "enum_type": node.spelling,
+                }
 
                 # Check to see if there's also an alias inherent in this declaration
                 children = list(
@@ -445,10 +451,10 @@ class FrameworkParser(object):
         else:
             for m in n.get_children():
                 if m.kind == CursorKind.INTEGER_LITERAL:
-                    self.enum_values[name] = int(m.token_string)
+                    self.enum_values[name] = {"value": int(m.token_string)}
 
                 elif m.kind == CursorKind.FLOATING_LITERAL:
-                    self.enum_values[name] = float(m.token_string)
+                    self.enum_values[name] = {"value": float(m.token_string)}
 
     def add_extern(self, name, node):
         node_type = node.type
