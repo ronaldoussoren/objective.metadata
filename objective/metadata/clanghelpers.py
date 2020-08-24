@@ -7,6 +7,7 @@ than "pythonic" but, hey, I'm an ObjC developer first...
 """
 
 import collections
+import enum
 import os
 from ctypes import POINTER, byref, c_int, c_uint
 from itertools import chain
@@ -15,7 +16,6 @@ import objc
 
 from .vendored import clang
 from .vendored.clang import (
-    BaseEnumeration,
     Cursor,
     CursorKind,
     SourceRange,
@@ -27,18 +27,18 @@ from .vendored.clang import (
 )
 
 # Add missing bindings...
-CursorKind.NSRETURNSRETAINED_ATTR = CursorKind(420)
-CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
-CursorKind.REQUIRESSUPER_ATTR = CursorKind(430)
-CursorKind.EXPLICITPROTOCOLIMPL_ATTR = CursorKind(433)
-CursorKind.OBJCDESIGNATEDINITIALIZER_ATTR = CursorKind(434)
-CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
-CursorKind.FLAGENUM_ATTR = CursorKind(437)
+# CursorKind.NSRETURNSRETAINED_ATTR = CursorKind(420)
+# CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
+# CursorKind.REQUIRESSUPER_ATTR = CursorKind(430)
+# CursorKind.EXPLICITPROTOCOLIMPL_ATTR = CursorKind(433)
+# CursorKind.OBJCDESIGNATEDINITIALIZER_ATTR = CursorKind(434)
+# CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
+# CursorKind.FLAGENUM_ATTR = CursorKind(437)
 
 TranslationUnit.INCLUDE_ATTRIBUTED_TYPES = 0x1000
 TranslationUnit.VISIT_IMPLICIT_ATTRIBUTES = 0x2000
 
-TypeKind.ATTRIBUTED = TypeKind(163)
+# TypeKind.ATTRIBUTED = TypeKind(163)
 
 
 # Add ctypes wrappers for a bunch of functions not
@@ -974,15 +974,18 @@ def _cursor_enum_value(self):
 Cursor.enum_value = property(fget=_cursor_enum_value)
 
 
-class NullabilityKind(BaseEnumeration):
-    _kinds = []
-    _name_map = None
+class NullabilityKind(enum.IntEnum):
+    def from_param(self):
+        return self.value
 
+    @classmethod
+    def from_id(cls, value):
+        return cls(value)
 
-NullabilityKind.NONNULL = NullabilityKind(0)
-NullabilityKind.NULLABLE = NullabilityKind(1)
-NullabilityKind.UNSPECIFIED = NullabilityKind(2)
-NullabilityKind.INVALID = NullabilityKind(3)
+    NONNULL = 0
+    NULLABLE = 1
+    UNSPECIFIED = 2
+    INVALID = 3
 
 
 def _type_nullability(self):
