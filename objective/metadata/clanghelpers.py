@@ -26,6 +26,7 @@ from clang.cindex import (
 )
 
 # Add missing bindings...
+CursorKind.NSRETURNSRETAINED_ATTR = CursorKind(420)
 CursorKind.OBJCRETURNSINNERPOINTER_ATTR = CursorKind(429)
 CursorKind.REQUIRESSUPER_ATTR = CursorKind(430)
 CursorKind.EXPLICITPROTOCOLIMPL_ATTR = CursorKind(433)
@@ -236,9 +237,9 @@ class LinkageKind(object):
     """
 
     INVALID = 0
-    NOLINKAGE = 1
+    NO_LINKAGE = 1
     INTERNAL = 2
-    UNIQUEEXTERNAL = 3
+    UNIQUE_EXTERNAL = 3
     EXTERNAL = 4
 
     # The unique kind objects, indexed by id.
@@ -283,9 +284,9 @@ class LinkageKind(object):
 
 # I was stupidly following the libclang enum pattern when I made this...
 LinkageKind.INVALID = LinkageKind(0)
-LinkageKind.NOLINKAGE = LinkageKind(1)
+LinkageKind.NO_LINKAGE = LinkageKind(1)
 LinkageKind.INTERNAL = LinkageKind(2)
-LinkageKind.UNIQUEEXTERNAL = LinkageKind(3)
+LinkageKind.UNIQUE_EXTERNAL = LinkageKind(3)
 LinkageKind.EXTERNAL = LinkageKind(4)
 
 

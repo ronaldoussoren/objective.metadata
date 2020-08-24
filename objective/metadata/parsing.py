@@ -397,6 +397,7 @@ class FrameworkParser(object):
             print("Added CFType: " + name)
 
     def add_struct(self, name, struct_type):
+        assert "union" not in name, name
         typestr, special = self.__get_typestr(struct_type, exogenous_name=name)
 
         fieldnames = []
@@ -429,11 +430,31 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added struct: ", name)
 
+    def add_static_const(self, name, node):
+        node_type = node.type
+        typestr, _ = self.__get_typestr(node_type)
+
+        if typestr == b"?":
+            clang_typestr = node.objc_type_encoding
+            if len(str(clang_typestr)) > 0:
+                typestr = clang_typestr
+
+        for n in node.get_children():  # noqa: B007
+            pass
+
+        else:
+            for m in n.get_children():
+                if m.kind == CursorKind.INTEGER_LITERAL:
+                    self.enum_values[name] = int(m.token_string)
+
+                elif m.kind == CursorKind.FLOATING_LITERAL:
+                    self.enum_values[name] = float(m.token_string)
+
     def add_extern(self, name, node):
         node_type = node.type
         typestr, special = self.__get_typestr(node_type)
 
-        if not special and "?" == typestr:
+        if not special and b"?" == typestr:
             clang_typestr = node.objc_type_encoding
             if len(str(clang_typestr)) > 0:
                 typestr = clang_typestr
@@ -1405,6 +1426,7 @@ class FrameworkParser(object):
         @param exogenous_name:
         @rtype : ( str, bool )
         """
+        assert exogenous_name is None or "union" not in exogenous_name
         is_cursor = isinstance(obj, Cursor)
         is_type = (not is_cursor) and isinstance(obj, Type)
         if not is_cursor and not is_type:
@@ -1513,6 +1535,10 @@ class FrameworkParser(object):
                 if exogenous_name
                 else getattr(typedecl.type, "spelling", None)
             )
+            if "union" in exogenous_name:
+                # Nested anonymous unions cause problems.
+                exogenous_name = None
+
             typestr, special = self.__typestr_from_node(
                 typedecl, exogenous_name=exogenous_name
             )
@@ -1708,7 +1734,7 @@ class FrameworkParser(object):
         special = False
         typestr = node.objc_type_encoding
         if typestr != "?" and typestr != "" and typestr is not None:
-            return typestr, special
+            return typestr.encode(), special
 
         # bail out of irrelevant cases
 
@@ -1727,12 +1753,14 @@ class FrameworkParser(object):
             typestr, special = self.__typestr_from_type(
                 clang_type, exogenous_name=exogenous_name
             )
+            assert isinstance(typestr, bytes)
         # follow typedefs
         elif node.kind == CursorKind.TYPEDEF_DECL:
             underlying_type = node.underlying_typedef_type
             typestr, special = self.__typestr_from_type(
                 underlying_type, exogenous_name=exogenous_name
             )
+            assert isinstance(typestr, bytes)
         # enums
         elif node.kind == CursorKind.ENUM_DECL:
             clang_type = node.enum_type
@@ -1779,32 +1807,37 @@ class FrameworkParser(object):
         elif node.kind == CursorKind.UNION_DECL:
             result = [objc._C_UNION_B]
             if node.spelling is None or node.spelling == "":
+                assert (
+                    exogenous_name is None or "union" not in exogenous_name
+                ), exogenous_name
                 if exogenous_name is not None:
-                    result.append("_" + exogenous_name)
+                    result.append(b"_" + exogenous_name.encode())
                     assert not exogenous_name.startswith(
                         "const"
                     ), "Qualifiers leaking into names!"
                     special = True
             else:
+                assert "union" not in node.spelling, node.spelling
                 assert not node.spelling.startswith(
                     "const"
                 ), "Qualifiers leaking into names!"
-                result.append(node.spelling)
+                result.append(node.spelling.encode())
 
-            result.append("=")
+            result.append(b"=")
 
             for c in node.get_children():
                 if c.kind.is_attribute():
                     continue
 
                 t, s = self.__typestr_from_node(c)
+                assert isinstance(t, bytes)
                 if s:
                     special = True
                 if t is not None:
                     result.append(t)
 
             result.append(objc._C_UNION_E)
-            typestr, special = "".join(result), special
+            typestr, special = b"".join(result), special
         else:
             # try drilling down to canonical
             canonical = node.canonical
@@ -1815,6 +1848,7 @@ class FrameworkParser(object):
             else:
                 print("Unhandled node:", node)
 
+        assert isinstance(typestr, bytes)
         return typestr, special
 
 
@@ -1854,14 +1888,18 @@ class DefinitionVisitor(AbstractClangVisitor):
 
     def visit_var_decl(self, node):
         linkage = node.linkage
-        if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUEEXTERNAL:
+        if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUE_EXTERNAL:
             self._parser.add_extern(node.spelling, node)
+
+        elif linkage == LinkageKind.INTERNAL:
+            self._parser.add_static_const(node.spelling, node)
 
     def visit_enum_decl(self, node):
         self._parser.add_enumeration(node)
 
     def visit_struct_decl(self, node):
         self.descend(node)
+        assert "union" not in node.type.spelling
         self.__all_structs[getattr(node.type, "spelling", None)] = node.type
 
     def visit_objc_protocol_decl(self, node):
@@ -1879,6 +1917,11 @@ class DefinitionVisitor(AbstractClangVisitor):
 
         underlying_type = node.underlying_typedef_type
         underlying_name = getattr(underlying_type, "spelling", None)
+        if "union" in underlying_name:
+            from .clang_tools import dump_node
+
+            dump_node(node)
+            assert 0
 
         # Add typedef to parser
         self._parser.add_typedef(typedef_name, underlying_name)
