@@ -6,21 +6,17 @@ I realize that my "categories" on the libclang python classes are more Obj-C-ish
 than "pythonic" but, hey, I'm an ObjC developer first...
 """
 
-import collections
 import enum
-import os
-from ctypes import POINTER, byref, c_int, c_uint
+from ctypes import POINTER, Structure, byref, c_int, c_uint
 from itertools import chain
 
 import objc
 
 from .vendored import clang
-from .vendored.clang import (
+
+from .vendored.clang import (  # SourceRange,; TranslationUnit,
     Cursor,
     CursorKind,
-    SourceRange,
-    Structure,
-    TranslationUnit,
     Type,
     TypeKind,
     _CXString,
@@ -34,9 +30,8 @@ from .vendored.clang import (
 # CursorKind.OBJCDESIGNATEDINITIALIZER_ATTR = CursorKind(434)
 # CursorKind.OBJCBOXABLE_ATTR = CursorKind(436)
 # CursorKind.FLAGENUM_ATTR = CursorKind(437)
-
-TranslationUnit.INCLUDE_ATTRIBUTED_TYPES = 0x1000
-TranslationUnit.VISIT_IMPLICIT_ATTRIBUTES = 0x2000
+# TranslationUnit.INCLUDE_ATTRIBUTED_TYPES = 0x1000
+# TranslationUnit.VISIT_IMPLICIT_ATTRIBUTES = 0x2000
 
 # TypeKind.ATTRIBUTED = TypeKind(163)
 
@@ -83,210 +78,170 @@ objc._C_BYREF = b"R"
 ###
 
 
-class ObjcDeclQualifier(object):
-    Flag_None = 0x0
-    Flag_In = 0x1
-    Flag_InOut = 0x2
-    Flag_Out = 0x4
-    Flag_Bycopy = 0x8
-    Flag_Byref = 0x10
-    Flag_Oneway = 0x20
-    # noinspection PyProtectedMember
-    __val_to_encode_string = {
-        Flag_In: objc._C_IN,
-        Flag_InOut: objc._C_INOUT,
-        Flag_Out: objc._C_OUT,
-        Flag_Bycopy: objc._C_BYCOPY,
-        Flag_Byref: objc._C_BYREF,
-        Flag_Oneway: objc._C_ONEWAY,
-    }
+# class ObjcDeclQualifier(object):
+#    Flag_None = 0x0
+#    Flag_In = 0x1
+#    Flag_InOut = 0x2
+#    Flag_Out = 0x4
+#    Flag_Bycopy = 0x8
+#    Flag_Byref = 0x10
+#    Flag_Oneway = 0x20
+#    # noinspection PyProtectedMember
+#    __val_to_encode_string = {
+#        Flag_In: objc._C_IN,
+#        Flag_InOut: objc._C_INOUT,
+#        Flag_Out: objc._C_OUT,
+#        Flag_Bycopy: objc._C_BYCOPY,
+#        Flag_Byref: objc._C_BYREF,
+#        Flag_Oneway: objc._C_ONEWAY,
+#    }
+#
+#    def __init__(self, value):
+#        self.value = value
+#
+#    def __eq__(self, other):
+#        return self.value == other.value
+#
+#    def __ne__(self, other):
+#        return not self.__eq__(other)
+#
+#    def __repr__(self):
+#        string = "ObjcDeclQualifier("
+#        found_any = False
+#        for attr in dir(self):
+#            if attr.startswith("Flag_"):
+#                flag_val = getattr(self, attr)
+#                if bool(self.value & flag_val):
+#                    if found_any:
+#                        string += "|"
+#                    string += attr[5:]
+#                    found_any = True
+#        if not found_any:
+#            string += "None"
+#        string += ")"
+#        return string
+#
+#    @staticmethod
+#    def from_encode_string(string):
+#        val = ObjcDeclQualifier.Flag_None
+#        string = string or ""
+#        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
+#            if encode_string in string:
+#                val = val | value
+#        return ObjcDeclQualifier(val)
+#
+#    def to_encode_string(self):
+#        string = ""
+#        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
+#            if bool(self.value & value):
+#                string = string + encode_string
+#        return string
+#
+#    def add_flags(self, other):
+#        if not isinstance(other, ObjcDeclQualifier):
+#            other = ObjcDeclQualifier(int(other))
+#        self.value = self.value | other.value
+#
+#    def subtract_flags(self, other):
+#        if not isinstance(other, ObjcDeclQualifier):
+#            other = ObjcDeclQualifier(int(other))
+#        self.value = self.value & (~other.value)
+#
+#    @property
+#    def is_in(self):
+#        return bool(self.value & self.Flag_In)
+#
+#    @is_in.setter
+#    def is_in(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_In
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_In
+#
+#    @property
+#    def is_inout(self):
+#        return bool(self.value & self.Flag_InOut)
+#
+#    @is_inout.setter
+#    def is_inout(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_InOut
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_InOut
+#
+#    @property
+#    def is_out(self):
+#        return bool(self.value & self.Flag_Out)
+#
+#    @is_out.setter
+#    def is_out(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_Out
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_Out
+#
+#    @property
+#    def is_bycopy(self):
+#        return bool(self.value & self.Flag_Bycopy)
+#
+#    @is_bycopy.setter
+#    def is_bycopy(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_Bycopy
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_Bycopy
+#
+#    @property
+#    def is_byref(self):
+#        return bool(self.value & self.Flag_Byref)
+#
+#    @is_byref.setter
+#    def is_byref(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_Byref
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_Byref
+#
+#    @property
+#    def is_oneway(self):
+#        return bool(self.value & self.Flag_Oneway)
+#
+#    @is_oneway.setter
+#    def is_oneway(self, value):
+#        if value:
+#            self.value |= ObjcDeclQualifier.Flag_Oneway
+#        else:
+#            self.value &= ~ObjcDeclQualifier.Flag_Oneway
+#
+#    @property
+#    def is_none(self):
+#        return self.value == self.Flag_None
+#
+#    @is_none.setter
+#    def is_none(self, value):
+#        if value:
+#            self.value = self.Flag_None
+#        else:
+#            raise ValueError(value)
 
-    def __init__(self, value):
-        self.value = value
 
-    def __eq__(self, other):
-        return self.value == other.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __repr__(self):
-        string = "ObjcDeclQualifier("
-        found_any = False
-        for attr in dir(self):
-            if attr.startswith("Flag_"):
-                flag_val = getattr(self, attr)
-                if bool(self.value & flag_val):
-                    if found_any:
-                        string += "|"
-                    string += attr[5:]
-                    found_any = True
-        if not found_any:
-            string += "None"
-        string += ")"
-        return string
-
-    @staticmethod
-    def from_encode_string(string):
-        val = ObjcDeclQualifier.Flag_None
-        string = string or ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
-            if encode_string in string:
-                val = val | value
-        return ObjcDeclQualifier(val)
-
-    def to_encode_string(self):
-        string = ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
-            if bool(self.value & value):
-                string = string + encode_string
-        return string
-
-    def add_flags(self, other):
-        if not isinstance(other, ObjcDeclQualifier):
-            other = ObjcDeclQualifier(int(other))
-        self.value = self.value | other.value
-
-    def subtract_flags(self, other):
-        if not isinstance(other, ObjcDeclQualifier):
-            other = ObjcDeclQualifier(int(other))
-        self.value = self.value & (~other.value)
-
-    @property
-    def is_in(self):
-        return bool(self.value & self.Flag_In)
-
-    @is_in.setter
-    def is_in(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_In
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_In
-
-    @property
-    def is_inout(self):
-        return bool(self.value & self.Flag_InOut)
-
-    @is_inout.setter
-    def is_inout(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_InOut
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_InOut
-
-    @property
-    def is_out(self):
-        return bool(self.value & self.Flag_Out)
-
-    @is_out.setter
-    def is_out(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Out
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Out
-
-    @property
-    def is_bycopy(self):
-        return bool(self.value & self.Flag_Bycopy)
-
-    @is_bycopy.setter
-    def is_bycopy(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Bycopy
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Bycopy
-
-    @property
-    def is_byref(self):
-        return bool(self.value & self.Flag_Byref)
-
-    @is_byref.setter
-    def is_byref(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Byref
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Byref
-
-    @property
-    def is_oneway(self):
-        return bool(self.value & self.Flag_Oneway)
-
-    @is_oneway.setter
-    def is_oneway(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Oneway
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Oneway
-
-    @property
-    def is_none(self):
-        return self.value == self.Flag_None
-
-    @is_none.setter
-    def is_none(self, value):
-        if value:
-            self.value = self.Flag_None
-        else:
-            raise ValueError(value)
-
-
-class LinkageKind(object):
+class LinkageKind(enum.IntEnum):
     """
     A class to hold linkage specifiers.
     """
+
+    def from_param(self):
+        return self.value
+
+    @classmethod
+    def from_id(cls, value):
+        return cls(value)
 
     INVALID = 0
     NO_LINKAGE = 1
     INTERNAL = 2
     UNIQUE_EXTERNAL = 3
     EXTERNAL = 4
-
-    # The unique kind objects, indexed by id.
-    _kinds = []
-    _name_map = None
-
-    def __init__(self, value):
-        if value >= len(LinkageKind._kinds):
-            LinkageKind._kinds += [None] * (value - len(LinkageKind._kinds) + 1)
-        if LinkageKind._kinds[value] is not None:
-            raise ValueError("LinkageKind already loaded")
-        self.value = value
-        self._name_map = {}
-        LinkageKind._kinds[value] = self
-        LinkageKind._name_map = None
-
-    def from_param(self):
-        return self.value
-
-    @property
-    def name(self):
-        """Get the enumeration name of this cursor kind."""
-        if self._name_map == {}:
-            for key, value in LinkageKind.__dict__.items():
-                if isinstance(value, LinkageKind):
-                    self._name_map[value] = key
-
-        return self._name_map[self]
-
-    @staticmethod
-    def from_id(linkage_id):
-        if (
-            linkage_id >= len(LinkageKind._kinds)
-            or LinkageKind._kinds[linkage_id] is None
-        ):
-            raise ValueError("Unknown type kind %d" % (linkage_id,))
-        return LinkageKind._kinds[linkage_id]
-
-    def __repr__(self):
-        return "LinkageKind.%s" % (self.name,)
-
-
-# I was stupidly following the libclang enum pattern when I made this...
-LinkageKind.INVALID = LinkageKind(0)
-LinkageKind.NO_LINKAGE = LinkageKind(1)
-LinkageKind.INTERNAL = LinkageKind(2)
-LinkageKind.UNIQUE_EXTERNAL = LinkageKind(3)
-LinkageKind.EXTERNAL = LinkageKind(4)
 
 
 class AbstractClangVisitor(object):
@@ -315,197 +270,197 @@ class AbstractClangVisitor(object):
 ###
 
 
-def _type_decl_getter(self):
-    """
-
-    :param self:
-    :return:
-    """
-    decl = self.get_declaration()
-    if decl.kind == CursorKind.NO_DECL_FOUND:
-        return None
-    else:
-        return decl
-
-
-Type.declaration = property(fget=_type_decl_getter)
-
-
-def _type_get_quals(self):
-    quals = []
-    if self.is_const_qualified():
-        quals.append("const")
-    if self.is_volatile_qualified():
-        quals.append("volatile")
-    if self.is_restrict_qualified():
-        quals.append("restrict")
-
-    return quals if len(quals) > 0 else None
-
-
-Type.quals = property(fget=_type_get_quals)
-
+# def _type_decl_getter(self):
+#    """
+#
+#    :param self:
+#    :return:
+#    """
+#    decl = self.get_declaration()
+#    if decl.kind == CursorKind.NO_DECL_FOUND:
+#        return None
+#    else:
+#        return decl
+#
+#
+# Type.declaration = property(fget=_type_decl_getter)
+#
+#
+# def _type_get_quals(self):
+#    quals = []
+#    if self.is_const_qualified():
+#        quals.append("const")
+#    if self.is_volatile_qualified():
+#        quals.append("volatile")
+#    if self.is_restrict_qualified():
+#        quals.append("restrict")
+#
+#    return quals if len(quals) > 0 else None
+#
+#
+# Type.quals = property(fget=_type_get_quals)
+#
 # The helpful folks who produced the clang python bindings got a few things wrong.
 # For instance, they assert that a type is a FUNCTIONPROTO before allowing you
 # to enumerate arguments
 # or ask if it's variadic. That's nice, but it doesn't cover block parameter
 # declarations, which can also answer those questions
-
-
-def _type_argument_types(self):
-    """Retrieve a container for the non-variadic arguments for this type.
-
-    The returned object is iterable and indexable. Each item in the
-    container is a Type instance.
-    """
-
-    class ArgumentsIterator(collections.Sequence):
-        def __init__(self, parent):
-            self.parent = parent
-            self.length = None
-
-        def __len__(self):
-            if self.length is None:
-                self.length = clang.conf.lib.clang_getNumArgTypes(self.parent)
-
-            return self.length
-
-        def __getitem__(self, key):
-            # libclang had a fix-me here of: Support slice objects.
-            if not isinstance(key, int):
-                raise TypeError("Must supply a non-negative int.")
-
-            if key < 0:
-                raise IndexError("Only non-negative indexes are accepted.")
-
-            if key >= len(self):
-                raise IndexError(
-                    "Index greater than container length: " "%d > %d" % (key, len(self))
-                )
-
-            result = clang.conf.lib.clang_getArgType(self.parent, key)
-            if result.kind == TypeKind.INVALID:
-                raise IndexError("Argument could not be retrieved.")
-
-            return result
-
-    return ArgumentsIterator(self)
-
-
-Type.argument_types = _type_argument_types
-
-
-def _type_is_function_variadic(self):
-    """Determine whether this function Type is a variadic function type."""
-    # assert self.kind == TypeKind.FUNCTIONPROTO
-    return clang.conf.lib.clang_isFunctionTypeVariadic(self)
-
-
-Type.is_function_variadic = _type_is_function_variadic
-
-
-def _type_looks_like_function(self):
-    if self.kind == TypeKind.FUNCTIONPROTO or self.kind == TypeKind.FUNCTIONNOPROTO:
-        return True
-
-    if self.kind == TypeKind.BLOCKPOINTER:
-        return False  # We're not a function, we're a block.
-
-    return_type = self.get_result()
-    if return_type.kind != TypeKind.INVALID:
-        return True
-
-    if self.kind == TypeKind.POINTER:
-        pointee = self.get_pointee()
-        return pointee.looks_like_function
-
-    canonical = self.get_canonical()
-    if canonical != self:
-        return canonical.looks_like_function
-
-    return False
-
-
-Type.looks_like_function = property(fget=_type_looks_like_function)
-
-
-def _type_pointee(self):
-    pointee = self.get_pointee()
-    if pointee and pointee.kind != TypeKind.INVALID and pointee != self:
-        return pointee
-    return None
-
-
-Type.pointee = property(fget=_type_pointee)
+#
+#
+# def _type_argument_types(self):
+#    """Retrieve a container for the non-variadic arguments for this type.
+#
+#    The returned object is iterable and indexable. Each item in the
+#    container is a Type instance.
+#    """
+#
+#    class ArgumentsIterator(collections.Sequence):
+#        def __init__(self, parent):
+#            self.parent = parent
+#            self.length = None
+#
+#        def __len__(self):
+#            if self.length is None:
+#                self.length = clang.conf.lib.clang_getNumArgTypes(self.parent)
+#
+#            return self.length
+#
+#        def __getitem__(self, key):
+#            # libclang had a fix-me here of: Support slice objects.
+#            if not isinstance(key, int):
+#                raise TypeError("Must supply a non-negative int.")
+#
+#            if key < 0:
+#                raise IndexError("Only non-negative indexes are accepted.")
+#
+#            if key >= len(self):
+#                raise IndexError(
+#                    "Index greater than container length: " "%d > %d" % (key, len(self))
+#                )
+#
+#            result = clang.conf.lib.clang_getArgType(self.parent, key)
+#            if result.kind == TypeKind.INVALID:
+#                raise IndexError("Argument could not be retrieved.")
+#
+#            return result
+#
+#    return ArgumentsIterator(self)
+#
+#
+# Type.argument_types = _type_argument_types
+#
+#
+# def _type_is_function_variadic(self):
+#    """Determine whether this function Type is a variadic function type."""
+#    # assert self.kind == TypeKind.FUNCTIONPROTO
+#    return clang.conf.lib.clang_isFunctionTypeVariadic(self)
+#
+#
+# Type.is_function_variadic = _type_is_function_variadic
+#
+#
+# def _type_looks_like_function(self):
+#    if self.kind == TypeKind.FUNCTIONPROTO or self.kind == TypeKind.FUNCTIONNOPROTO:
+#        return True
+#
+#    if self.kind == TypeKind.BLOCKPOINTER:
+#        return False  # We're not a function, we're a block.
+#
+#    return_type = self.get_result()
+#    if return_type.kind != TypeKind.INVALID:
+#        return True
+#
+#    if self.kind == TypeKind.POINTER:
+#        pointee = self.get_pointee()
+#        return pointee.looks_like_function
+#
+#    canonical = self.get_canonical()
+#    if canonical != self:
+#        return canonical.looks_like_function
+#
+#    return False
+#
+#
+# Type.looks_like_function = property(fget=_type_looks_like_function)
+#
+#
+# def _type_pointee(self):
+#    pointee = self.get_pointee()
+#    if pointee and pointee.kind != TypeKind.INVALID and pointee != self:
+#        return pointee
+#    return None
+#
+#
+# Type.pointee = property(fget=_type_pointee)
 
 # Imagine that! The libclang implementation of Cursor.result_type is
 # just dead wrong (goes through the type)
 # Move that property over from Cursor to Type, then replace the
 # Cursor implementation later
-Type.result_type = Cursor.result_type
+# Type.result_type = Cursor.result_type
 
-Type.valid_type = property(
-    fget=lambda self: None if self.kind == TypeKind.INVALID else self
-)
-
-
-def _type_ever_passes_test(self, pred):
-    if pred(self):
-        return True
-    elif self.kind == TypeKind.TYPEDEF:
-        td = self.declaration
-        ult = None if td is None else td.underlying_typedef_type_valid
-        if ult:
-            return ult.ever_passes_test(pred)
-
-    return False
-
-
-Type.ever_passes_test = _type_ever_passes_test
-
-
-def _type_ever_defines_to(self, type_name):
-    return self.ever_passes_test(
-        lambda x: (
-            getattr(x, "spelling", "") == type_name
-            or (x.declaration and x.declaration.spelling == type_name)
-        )
-    )
-
-
-Type.ever_defines_to = _type_ever_defines_to
-
-
-def _type_next_typedefed_type(self):
-    if self.kind != TypeKind.TYPEDEF:
-        return None
-    td = self.declaration
-    ult = None if td is None else td.underlying_typedef_type_valid
-    return ult
-
-
-Type.next_typedefed_type = property(fget=_type_next_typedefed_type)
-
-
-def _type_element_count(self):
-    """Retrieve the number of elements in this type.
-
-    Replacing the method from the libclang python bindings because
-    the stock one throws an exception,
-    of type *Exception*. Sheesh.
-
-    Returns an int.
-
-    If the Type is not an array or vector, this returns None
-    """
-    result = clang.conf.lib.clang_getNumElements(self)
-    if result < 0:
-        return None
-
-    return result
-
-
-Type.element_count = property(fget=_type_element_count)
+# Type.valid_type = property(
+#    fget=lambda self: None if self.kind == TypeKind.INVALID else self
+# )
+#
+#
+# def _type_ever_passes_test(self, pred):
+#    if pred(self):
+#        return True
+#    elif self.kind == TypeKind.TYPEDEF:
+#        td = self.declaration
+#        ult = None if td is None else td.underlying_typedef_type_valid
+#        if ult:
+#            return ult.ever_passes_test(pred)
+#
+#    return False
+#
+#
+# Type.ever_passes_test = _type_ever_passes_test
+#
+#
+# def _type_ever_defines_to(self, type_name):
+#    return self.ever_passes_test(
+#        lambda x: (
+#            getattr(x, "spelling", "") == type_name
+#            or (x.declaration and x.declaration.spelling == type_name)
+#        )
+#    )
+#
+#
+# Type.ever_defines_to = _type_ever_defines_to
+#
+#
+# def _type_next_typedefed_type(self):
+#    if self.kind != TypeKind.TYPEDEF:
+#        return None
+#    td = self.declaration
+#    ult = None if td is None else td.underlying_typedef_type_valid
+#    return ult
+#
+#
+# Type.next_typedefed_type = property(fget=_type_next_typedefed_type)
+#
+#
+# def _type_element_count(self):
+#    """Retrieve the number of elements in this type.
+#
+#    Replacing the method from the libclang python bindings because
+#    the stock one throws an exception,
+#    of type *Exception*. Sheesh.
+#
+#    Returns an int.
+#
+#    If the Type is not an array or vector, this returns None
+#    """
+#    result = clang.conf.lib.clang_getNumElements(self)
+#    if result < 0:
+#        return None
+#
+#    return result
+#
+#
+# Type.element_count = property(fget=_type_element_count)
 
 ###
 # Additions to clang.TypeKind
@@ -692,20 +647,20 @@ Cursor.token_string = property(
 )
 
 
-def _sourcerange_get_raw_contents(self):
-    contents = None
-
-    start_file_name = self.start.file.name
-    end_file_name = self.end.file.name
-    if start_file_name == end_file_name and os.path.exists(start_file_name):
-        with open(start_file_name) as fp:
-            fp.seek(self.start.offset)
-            contents = fp.read(self.end.offset - self.start.offset)
-
-    return contents
-
-
-SourceRange.get_raw_contents = _sourcerange_get_raw_contents
+# def _sourcerange_get_raw_contents(self):
+#    contents = None
+#
+#    start_file_name = self.start.file.name
+#    end_file_name = self.end.file.name
+#    if start_file_name == end_file_name and os.path.exists(start_file_name):
+#        with open(start_file_name) as fp:
+#            fp.seek(self.start.offset)
+#            contents = fp.read(self.end.offset - self.start.offset)
+#
+#    return contents
+#
+#
+# SourceRange.get_raw_contents = _sourcerange_get_raw_contents
 
 
 def _cursor_get_struct_field_decls(self):
@@ -854,155 +809,155 @@ Cursor.result_type = property(fget=_cursor_result_type)
 __specifiers = ["public", "protected", "package", "private"]
 
 
-def _cursor_get_access_specifier(self):
-    if self.kind != CursorKind.OBJC_IVAR_DECL:
-        return None
-
-    walker = self
-    while (
-        walker
-        and walker.kind != CursorKind.OBJC_INTERFACE_DECL
-        and walker.kind != CursorKind.OBJC_CATEGORY_DECL
-    ):
-        walker = walker.semantic_parent
-
-    interface_decl = walker
-
-    current_level = "protected"  # default
-    last_token_was_at = False
-    for token in interface_decl.get_tokens():
-        tstr = token.spelling
-        if not last_token_was_at and tstr == "@":
-            last_token_was_at = True
-        elif last_token_was_at:
-            last_token_was_at = False
-            if tstr in __specifiers:
-                current_level = tstr
-        elif self.spelling == tstr:
-            return current_level
-
-    return None
-
-
-Cursor.access_specifier = property(fget=_cursor_get_access_specifier)
-
-
-def _cursor_reconstitute_macro(self):
-    if self.kind != CursorKind.MACRO_DEFINITION:
-        return None
-
-    # try to reconstitute by tokens...
-    string = ""
-    min_offset = self.extent.start.offset
-    max_offset = self.extent.end.offset
-    tokens = list(self.get_tokens())
-
-    last_token = None
-    for token in tokens:
-        if (
-            last_token
-            and (token.extent.start.offset - last_token.extent.end.offset) >= 1
-        ):
-            string += " "
-        if (
-            token.extent.start.offset >= min_offset
-            and token.extent.end.offset <= max_offset
-        ):
-            string += token.spelling
-        last_token = token
-
-    return string.rstrip(" ")
+# def _cursor_get_access_specifier(self):
+#    if self.kind != CursorKind.OBJC_IVAR_DECL:
+#        return None
+#
+#    walker = self
+#    while (
+#        walker
+#        and walker.kind != CursorKind.OBJC_INTERFACE_DECL
+#        and walker.kind != CursorKind.OBJC_CATEGORY_DECL
+#    ):
+#        walker = walker.semantic_parent
+#
+#    interface_decl = walker
+#
+#    current_level = "protected"  # default
+#    last_token_was_at = False
+#    for token in interface_decl.get_tokens():
+#        tstr = token.spelling
+#        if not last_token_was_at and tstr == "@":
+#            last_token_was_at = True
+#        elif last_token_was_at:
+#            last_token_was_at = False
+#            if tstr in __specifiers:
+#                current_level = tstr
+#        elif self.spelling == tstr:
+#            return current_level
+#
+#    return None
+#
+#
+# Cursor.access_specifier = property(fget=_cursor_get_access_specifier)
 
 
-Cursor.reconstitute_macro = _cursor_reconstitute_macro
+# def _cursor_reconstitute_macro(self):
+#     if self.kind != CursorKind.MACRO_DEFINITION:
+#         return None
+#
+#     # try to reconstitute by tokens...
+#     string = ""
+#     min_offset = self.extent.start.offset
+#     max_offset = self.extent.end.offset
+#     tokens = list(self.get_tokens())
+#
+#     last_token = None
+#     for token in tokens:
+#         if (
+#             last_token
+#             and (token.extent.start.offset - last_token.extent.end.offset) >= 1
+#         ):
+#             string += " "
+#         if (
+#             token.extent.start.offset >= min_offset
+#             and token.extent.end.offset <= max_offset
+#         ):
+#             string += token.spelling
+#         last_token = token
+#
+#     return string.rstrip(" ")
+#
+#
+# Cursor.reconstitute_macro = _cursor_reconstitute_macro
+#
+#
+# def _cursor_get_objc_decl_qualifiers(self):
+#     if self.kind not in [
+#         CursorKind.OBJC_CLASS_METHOD_DECL,
+#         CursorKind.OBJC_INSTANCE_METHOD_DECL,
+#         CursorKind.PARM_DECL,
+#     ]:
+#         return None
+#     val = clang.conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
+#     return ObjcDeclQualifier(val)
+#
+#
+# Cursor.objc_decl_qualifiers = property(fget=_cursor_get_objc_decl_qualifiers)
+#
+# Cursor.underlying_typedef_type_valid = property(
+#     fget=lambda self: self.underlying_typedef_type.valid_type
+# )
 
 
-def _cursor_get_objc_decl_qualifiers(self):
-    if self.kind not in [
-        CursorKind.OBJC_CLASS_METHOD_DECL,
-        CursorKind.OBJC_INSTANCE_METHOD_DECL,
-        CursorKind.PARM_DECL,
-    ]:
-        return None
-    val = clang.conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
-    return ObjcDeclQualifier(val)
+# def _cursor_enum_value(self):
+#    """
+#    Replacing yet another broken implementation from the libclang python bindings
+#    @return:
+#    @rtype: int
+#    """
+#    if not hasattr(self, "_enum_value"):
+#        assert self.kind == CursorKind.ENUM_CONSTANT_DECL
+#        # Figure out the underlying type of the enum to know if it
+#        # is a signed or unsigned quantity.
+#        underlying_type = self.type.get_canonical()
+#        if underlying_type.kind == TypeKind.ENUM:
+#            underlying_type = (
+#                underlying_type.get_declaration().enum_type.get_canonical()
+#            )
+#        if underlying_type.kind in (
+#            TypeKind.CHAR_U,
+#            TypeKind.UCHAR,
+#            TypeKind.CHAR16,
+#            TypeKind.CHAR32,
+#            TypeKind.USHORT,
+#            TypeKind.UINT,
+#            TypeKind.ULONG,
+#            TypeKind.ULONGLONG,
+#            TypeKind.UINT128,
+#        ):
+#            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
+#                self
+#            )
+#        else:
+#            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
+#                self
+#            )
+#    return self._enum_value
+#
+#
+# Cursor.enum_value = property(fget=_cursor_enum_value)
 
 
-Cursor.objc_decl_qualifiers = property(fget=_cursor_get_objc_decl_qualifiers)
-
-Cursor.underlying_typedef_type_valid = property(
-    fget=lambda self: self.underlying_typedef_type.valid_type
-)
-
-
-def _cursor_enum_value(self):
-    """
-    Replacing yet another broken implementation from the libclang python bindings
-    @return:
-    @rtype: int
-    """
-    if not hasattr(self, "_enum_value"):
-        assert self.kind == CursorKind.ENUM_CONSTANT_DECL
-        # Figure out the underlying type of the enum to know if it
-        # is a signed or unsigned quantity.
-        underlying_type = self.type.get_canonical()
-        if underlying_type.kind == TypeKind.ENUM:
-            underlying_type = (
-                underlying_type.get_declaration().enum_type.get_canonical()
-            )
-        if underlying_type.kind in (
-            TypeKind.CHAR_U,
-            TypeKind.UCHAR,
-            TypeKind.CHAR16,
-            TypeKind.CHAR32,
-            TypeKind.USHORT,
-            TypeKind.UINT,
-            TypeKind.ULONG,
-            TypeKind.ULONGLONG,
-            TypeKind.UINT128,
-        ):
-            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
-                self
-            )
-        else:
-            self._enum_value = clang.conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
-                self
-            )
-    return self._enum_value
-
-
-Cursor.enum_value = property(fget=_cursor_enum_value)
-
-
-class NullabilityKind(enum.IntEnum):
-    def from_param(self):
-        return self.value
-
-    @classmethod
-    def from_id(cls, value):
-        return cls(value)
-
-    NONNULL = 0
-    NULLABLE = 1
-    UNSPECIFIED = 2
-    INVALID = 3
-
-
-def _type_nullability(self):
-    if not hasattr(self, "_nullability"):
-        self._nullability = clang.conf.lib.clang_Type_getNullability(self)
-
-    return NullabilityKind.from_id(self._nullability)
-
-
-Type.nullability = property(fget=_type_nullability)
-
-
-def _type_modified_type(self):
-    return clang.conf.lib.clang_Type_getModifiedType(self)
-
-
-Type.modified_type = property(fget=_type_modified_type)
+# class NullabilityKind(enum.IntEnum):
+#    def from_param(self):
+#        return self.value
+#
+#    @classmethod
+#    def from_id(cls, value):
+#        return cls(value)
+#
+#    NONNULL = 0
+#    NULLABLE = 1
+#    UNSPECIFIED = 2
+#    INVALID = 3
+#
+#
+# def _type_nullability(self):
+#    if not hasattr(self, "_nullability"):
+#        self._nullability = clang.conf.lib.clang_Type_getNullability(self)
+#
+#    return NullabilityKind.from_id(self._nullability)
+#
+#
+# Type.nullability = property(fget=_type_nullability)
+#
+#
+# def _type_modified_type(self):
+#    return clang.conf.lib.clang_Type_getModifiedType(self)
+#
+#
+# Type.modified_type = property(fget=_type_modified_type)
 
 
 class Version(Structure):

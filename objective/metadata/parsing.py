@@ -14,6 +14,8 @@ from .vendored.clang import (
     Cursor,
     CursorKind,
     Index,
+    NullabilityKind,
+    ObjcDeclQualifier,
     TranslationUnit,
     TranslationUnitLoadError,
     Type,
@@ -24,11 +26,9 @@ Config.set_library_path(
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
 )
 
-from objective.metadata.clanghelpers import (  # isort:skip
+from objective.metadata.clanghelpers import (  # isort:skip  # noqa: E402
     AbstractClangVisitor,
     LinkageKind,
-    NullabilityKind,
-    ObjcDeclQualifier,
 )
 
 
