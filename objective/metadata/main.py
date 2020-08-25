@@ -12,6 +12,7 @@ import platform
 import re
 import subprocess
 import sys
+import typing
 
 from . import compile, merge_xml, protocols, scan
 
@@ -66,7 +67,9 @@ protocols_command = subparsers.add_parser(
 )
 
 
-def make_pairs(sequence):
+def make_pairs(
+    sequence: typing.Any,
+) -> typing.Iterator[typing.Tuple[typing.Any, typing.Any]]:
     sequence = iter(sequence)
     while True:
         first = next(sequence)
@@ -74,7 +77,9 @@ def make_pairs(sequence):
         yield (first, second)
 
 
-def parse_ini(ini_file, ini_sections):
+def parse_ini(
+    ini_file: typing.Union[str, os.PathLike], ini_sections: typing.Sequence[str]
+) -> dict:  # incomplete type
     ini_dir = os.path.dirname(ini_file)
 
     cfg = configparser.ConfigParser()
@@ -161,17 +166,16 @@ def parse_ini(ini_file, ini_sections):
         yield info
 
 
-def path_for_sdk_version(version):
+def path_for_sdk_version(version: str) -> str:
     with open(os.devnull, "a") as dn:
         out = subprocess.check_output(
             ["xcodebuild", "-version", "-sdk", "macosx%s" % (version,), "Path"],
             stderr=dn,
         ).decode()
-        print(out)
         return out.strip()
 
 
-def sdk_ver_from_path(path):
+def sdk_ver_from_path(path: str) -> typing.Optional[float]:
     assert isinstance(path, str)
     with open(os.devnull, "a") as dn:
         process = subprocess.Popen(
@@ -191,7 +195,7 @@ def sdk_ver_from_path(path):
     return None
 
 
-def main():
+def main() -> None:
     args = parser.parse_args()
 
     if getattr(args, "libclang", None):

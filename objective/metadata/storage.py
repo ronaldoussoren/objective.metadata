@@ -4,10 +4,12 @@ Storage layer for scan and exception data.
 The data is stored in text files with JSON encoding.
 """
 import json
+import os
 import re
+import typing
 
 
-def _encode_default(obj):
+def _encode_default(obj: typing.Any) -> typing.Any:
     """
     'default' callback for json.encode,
     encodes set() as a sorted list
@@ -19,7 +21,7 @@ def _encode_default(obj):
     raise TypeError(obj)
 
 
-def _decode_object(pairs):
+def _decode_object(pairs: typing.List[typing.Tuple[str, typing.Any]]) -> typing.Any:
     """
     'object_pairs_hook' callback for json.decode.
     If a fieldname is an integer literal convert it to 'int'.
@@ -28,7 +30,7 @@ def _decode_object(pairs):
     be converted to 'str', mostly because this makes it
     easier to generate the compiled metadata files.
     """
-    result = {}
+    result: typing.Dict[typing.Union[str, int], typing.Any] = {}
     for k, v in pairs:
         if k.isdigit():
             result[int(k)] = v
@@ -40,6 +42,7 @@ def _decode_object(pairs):
             "typestr_override",
             "sel_of_type",
         }:
+            assert isinstance(v, str)
             result[k] = v.encode()
 
         else:
@@ -47,9 +50,14 @@ def _decode_object(pairs):
     return result
 
 
-def save_framework_info(filename, header, data, verbose=False):
+def save_framework_info(
+    filename: typing.Union[str, os.PathLike[str]],
+    header: str,
+    data: typing.Any,
+    verbose: bool = False,
+) -> None:
     if verbose:
-        print("Writing framework info to: " + filename)
+        print(f"Writing framework info to: {filename}")
 
     with open(filename, "w") as fp:
         fp.write(header)

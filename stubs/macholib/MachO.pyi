@@ -1,10 +1,16 @@
 import typing
 
-class fat_arch:
+class mach_header:
+    magic: int
     cputype: int
+    cpusubtype: int
+    filetype: int
+    ncmd: int
+    sizeofcmds: int
+    flags: int
 
 class MachOHeader:
-    headers: typing.List[fat_arch]
+    header: mach_header
 
 class MachO:
     headers: typing.List[MachOHeader]

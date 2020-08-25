@@ -3,6 +3,7 @@ import os
 import sys
 import textwrap
 import time
+import typing
 
 import objc
 from macholib.mach_o import CPU_TYPE_NAMES
@@ -66,7 +67,7 @@ opt_parser.add_option(
 )
 
 
-def macho_archs(filename):
+def macho_archs(filename: str) -> typing.Set[str]:
     result = set()
 
     m = MachO(filename)
