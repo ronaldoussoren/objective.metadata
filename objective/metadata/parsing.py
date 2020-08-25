@@ -52,7 +52,7 @@ AvailabilityInfo = typing.TypedDict(
 
 
 EnumOptions = typing.TypedDict(
-    "EnumOptions", {"value": typing.Union[int, float], "enum_type": str}, total=False
+    "EnumOptions", {"value": typing.Union[int, float], "enum_type": str}, total=True
 )
 EnumTypeOptions = typing.TypedDict("EnumTypeOptions", {"typestr": bytes})
 StructOptions = typing.TypedDict(
@@ -71,6 +71,12 @@ ArgInfo = typing.TypedDict(
         "null_accepted": bool,
         "type_modifier": bytes,
         "type_name": str,
+        "already_retained": bool,
+        "already_cfretained": bool,
+        "name": str,
+        "callable": "typing.Optional[CallbackInfo]",
+        "function": dict,  # These two should be replaced by 'callable'
+        "block": dict,
     },
     total=False,
 )
@@ -86,7 +92,90 @@ MethodInfo = typing.TypedDict(
         "variadic": bool,
         "printf_format": int,
         "null_terminated": bool,
+        "category": typing.Optional[str],
         "availability": typing.Optional[AvailabilityInfo],
+    },
+    total=False,
+)
+FunctionInfo = typing.TypedDict(
+    "FunctionInfo",
+    {
+        "args": typing.List[ArgInfo],
+        "retval": ArgInfo,
+        "variadic": bool,
+        "printf_format": int,
+        "inline": bool,
+        "null_terminated": bool,
+        "availability": typing.Optional[AvailabilityInfo],
+    },
+    total=False,
+)
+
+
+#
+# See explaination for CallbackInfo below
+#
+# the "2" types are needed because MyPy doesn't
+# support cyclic types. With some luck this should
+# be good enough for us (at the cost of some code
+# duplication)
+CallbackArgInfo2 = typing.TypedDict(
+    "CallbackArgInfo2",
+    {
+        "typestr": bytes,
+        "typestr_special": bool,
+        "null_accepted": bool,
+        "type_modifier": bytes,
+        "type_name": str,
+        "already_retained": bool,
+        "already_cfretained": bool,
+        "name": str,
+    },
+    total=False,
+)
+CallbackInfo2 = typing.TypedDict(
+    "CallbackInfo2",
+    {
+        "args": typing.List[CallbackArgInfo2],
+        "retval": CallbackArgInfo2,
+        "variadic": bool,
+        "printf_format": int,
+        "null_terminated": bool,
+    },
+    total=False,
+)
+
+# CallbackArgInfo is needed to break a cycle in the
+# type graph, which mypy does not yet support.
+#
+# This needs to work to support blocks with blocks as one
+# of their arguments.
+CallbackArgInfo = typing.TypedDict(
+    "CallbackArgInfo",
+    {
+        "typestr": bytes,
+        "typestr_special": bool,
+        "null_accepted": bool,
+        "type_modifier": bytes,
+        "type_name": str,
+        "already_retained": bool,
+        "already_cfretained": bool,
+        "callable": typing.Optional[CallbackInfo2],
+        "name": str,
+    },
+    total=False,
+)
+
+# Information about function/block signature for arguments
+# and returns values.
+CallbackInfo = typing.TypedDict(
+    "CallbackInfo",
+    {
+        "args": typing.List[CallbackArgInfo],
+        "retval": CallbackArgInfo,
+        "variadic": bool,
+        "printf_format": int,
+        "null_terminated": bool,
     },
     total=False,
 )
@@ -100,6 +189,8 @@ PropInfo = typing.TypedDict(
         "attributes": typing.Optional[
             typing.Set[typing.Union[str, typing.Tuple[str, str]]]
         ],
+        "availability": typing.Optional[AvailabilityInfo],
+        "category": typing.Optional[str],
     },
 )
 
@@ -111,6 +202,31 @@ ProtocolInfo = typing.TypedDict(
         "properties": typing.List[PropInfo],
         "availability": typing.Optional[AvailabilityInfo],
     },
+)
+
+ClassInfo = typing.TypedDict(
+    "ClassInfo",
+    {
+        "name": str,
+        "super": typing.Optional[str],
+        "protocols": typing.Set[str],
+        "methods": typing.List[MethodInfo],
+        "categories": typing.List[str],
+        "properties": typing.List[PropInfo],
+        "availability": typing.Optional[AvailabilityInfo],
+    },
+)
+
+CFTypeInfo = typing.TypedDict(
+    "CFTypeInfo",
+    {"typestr": bytes, "gettypeid_func": str, "tollfree": str},
+    total=False,
+)
+
+LiteralInfo = typing.TypedDict(
+    "LiteralInfo",
+    {"value": typing.Union[None, int, float, str], "unicode": bool},
+    total=False,
 )
 
 
@@ -162,16 +278,16 @@ class FrameworkParser(object):
         self.enum_values: typing.Dict[str, EnumOptions] = {}
         self.structs: typing.Dict[str, StructOptions] = {}
         self.externs: typing.Dict[str, ExternOptions] = {}
-        self.literals: typing.Dict[str, typing.Union[int, float]] = {}
+        self.literals: typing.Dict[str, LiteralInfo] = {}
         self.aliases: typing.Dict[str, str] = {}
         self.expressions: typing.Dict[str, str] = {}
-        self.functions: typing.Dict = {}  # incomplete type
-        self.cftypes: typing.Dict = {}  # incomplete type
+        self.functions: typing.Dict[str, FunctionInfo] = {}  # incomplete type
+        self.cftypes: typing.Dict[str, CFTypeInfo] = {}
         self.func_macros: typing.Dict = {}  # incomplete type
         self.typedefs: typing.Dict = {}  # incomplete type
         self.formal_protocols: typing.Dict[str, ProtocolInfo] = {}
         self.informal_protocols: typing.Dict[str, ProtocolInfo] = {}
-        self.classes: typing.Dict = {}  # incomplete type
+        self.classes: typing.Dict[str, ClassInfo] = {}
         self.called_definitions: typing.Dict = {}
         self.macro_names: typing.Set[str] = set()
 
@@ -226,7 +342,7 @@ class FrameworkParser(object):
         if self.verbose:
             print("Scan complete.")
 
-    def definitions(self) -> dict:
+    def definitions(self) -> dict:  # incomplete type info
         """
         Returns a dictionary with information about what was parsed and
         the definitions.
@@ -256,15 +372,16 @@ class FrameworkParser(object):
         }
 
     @property
-    def exceptions(self) -> dict:
+    def exceptions(self) -> dict:  # incomplete type info
         functions = {}
         for nm, definition in self.functions.items():
             info: dict = {}  # incomplete type information
 
             # My Read: Get rid of all function specs that take ptr arguments?
             for idx, a in enumerate(definition["args"]):
+                a = a.copy()
                 if a["typestr"].startswith(b"^"):
-                    a = dict(a)
+                    # a = dict(a)
                     del a["typestr"]
                     del a["name"]
                     try:
@@ -274,7 +391,7 @@ class FrameworkParser(object):
 
             # My Read: Get rid of all typestrs of pointer return types
             if definition["retval"]["typestr"].startswith(b"^"):
-                a = dict(definition["retval"])
+                a = definition["retval"].copy()
                 del a["typestr"]
                 info["retval"] = a
 
@@ -296,7 +413,7 @@ class FrameworkParser(object):
                     # take pointer args
                     for idx, a in enumerate(meth["args"]):
                         if a["typestr"].startswith(b"^"):
-                            a = dict(a)
+                            a = a.copy()
                             del a["typestr"]
                             del a["typestr_special"]
                             try:
@@ -306,7 +423,7 @@ class FrameworkParser(object):
 
                     # My Read: remove metadata for protocol methods that return pointers
                     if meth["retval"]["typestr"].startswith(b"^"):
-                        a = dict(meth["retval"])
+                        a = meth["retval"].copy()
                         del a["typestr"]
                         del a["typestr_special"]
                         info["retval"] = a
@@ -346,7 +463,7 @@ class FrameworkParser(object):
                 info = {}
                 for idx, a in enumerate(method["args"]):
                     if a["typestr"].startswith(b"^"):
-                        a = dict(a)
+                        a = a.copy()
                         del a["typestr"]
                         del a["typestr_special"]
                         try:
@@ -355,7 +472,7 @@ class FrameworkParser(object):
                             info["args"] = {idx: a}
 
                 if method["retval"]["typestr"].startswith(b"^"):
-                    a = dict(method["retval"])
+                    a = method["retval"].copy()
                     del a["typestr"]
                     del a["typestr_special"]
                     info["retval"] = a
@@ -440,7 +557,7 @@ class FrameworkParser(object):
         value_count = 0
 
         if node.kind == CursorKind.ENUM_CONSTANT_DECL:
-            self.enum_values[name] = {"value": node.enum_value}
+            self.literals[name] = {"value": node.enum_value}
             value_count = 1
 
         elif node.kind == CursorKind.ENUM_DECL:
@@ -490,6 +607,7 @@ class FrameworkParser(object):
             if override_typestring is not None
             else self.__get_typestr(cftype)[0]
         )
+        assert typestr is not None
         self.cftypes[name] = {"typestr": typestr}
         if self.verbose:
             print("Added CFType: " + name)
@@ -544,10 +662,10 @@ class FrameworkParser(object):
         else:
             for m in n.get_children():
                 if m.kind == CursorKind.INTEGER_LITERAL:
-                    self.enum_values[name] = {"value": int(m.token_string)}
+                    self.literals[name] = {"value": int(m.token_string)}
 
                 elif m.kind == CursorKind.FLOATING_LITERAL:
-                    self.enum_values[name] = {"value": float(m.token_string)}
+                    self.literals[name] = {"value": float(m.token_string)}
 
     def add_extern(self, name: str, node: Cursor) -> None:
         node_type = node.type
@@ -559,22 +677,21 @@ class FrameworkParser(object):
             if len(str(clang_typestr)) > 0:
                 typestr = clang_typestr
 
-        self.externs[name] = extern = ExternOptions(typestr=typestr)
+        extern: ExternOptions
+        self.externs[name] = extern = {"typestr": typestr}
         extern["availability"] = self._get_availability(node)
         if self.verbose:
             print(f"Added extern: {name} typestr {typestr.decode()!r}")
 
     def add_function(self, node: Cursor) -> None:
         name = node.spelling
-        if "CFBundleGetFunctionPointersForNames" in name:
-            print("stop")
         if name.startswith("__"):
             return
 
         funcspec = node.get_function_specifiers()
 
-        func: dict  # incomplete type
-        self.functions[node.spelling] = func = {"retval": {"typestr": None}, "args": []}
+        func: FunctionInfo
+        self.functions[node.spelling] = func = {"retval": {}, "args": []}
         func["availability"] = self._get_availability(node)
 
         # Does it follow the CF returns-retained pattern?
@@ -599,6 +716,7 @@ class FrameworkParser(object):
         # get return type
         return_type = node.result_type
         return_type_typestr = self.__get_typestr(return_type)[0]
+        assert return_type_typestr is not None
         func["retval"]["typestr"] = return_type_typestr
 
         # get arguments
@@ -610,14 +728,16 @@ class FrameworkParser(object):
 
         for arg in args:
             arg_type = arg.type
+            typestr = self.__get_typestr(arg_type)[0]
+            assert typestr is not None
 
-            arginfo = {"name": arg.spelling, "typestr": self.__get_typestr(arg_type)[0]}
+            arginfo: ArgInfo = {"name": arg.spelling, "typestr": typestr}
 
             if arg_type.kind == TypeKind.BLOCKPOINTER:
-                arginfo["block"] = self.__extract_block(arg.type)
+                arginfo["callable"] = self.__extract_block(arg.type)
 
             if arg_type.looks_like_function:
-                arginfo["function"] = self.__extract_function(arg_type)
+                arginfo["callable"] = self.__extract_function(arg_type)
 
             # get qualifiers
             qualifiers = arg.objc_decl_qualifiers or ObjcDeclQualifier(
@@ -683,7 +803,8 @@ class FrameworkParser(object):
         # the previous parsing engine.
         # Ideally we would get rid of this.
         if len(func["args"]) == 0:
-            func["args"].append({"name": None, "typestr": b"v"})
+            arginfo = {"typestr": b"v"}
+            func["args"].append(arginfo)
 
         # Log message
         if self.verbose:
@@ -736,6 +857,8 @@ class FrameworkParser(object):
                     "typestr": typestr,
                     "typestr_special": special,
                     "attributes": decl.get_property_attributes(),
+                    "availability": self._get_availability(node),
+                    "category": None,
                 }
                 protocol["properties"].append(this_property)
             else:
@@ -774,6 +897,8 @@ class FrameworkParser(object):
                     "typestr": typestr,
                     "typestr_special": special,
                     "attributes": decl.get_property_attributes(),
+                    "availability": self._get_availability(node),
+                    "category": None,
                 }
                 protocol["properties"].append(this_property)
             else:
@@ -840,9 +965,8 @@ class FrameworkParser(object):
 
         return meta if meta else None
 
-    def add_class(self, node):
-        # from .clang_tools import dump_node
-        # dump_node(node)
+    def add_class(self, node: Cursor):
+        class_info: ClassInfo
 
         if node.spelling in self.classes:
             class_info = self.classes[node.spelling]
@@ -855,7 +979,7 @@ class FrameworkParser(object):
                 superclass = child.referenced
                 superclass_name = superclass.spelling
 
-            class_info = self.classes[node.spelling] = {
+            self.classes[node.spelling] = class_info = {
                 "name": node.spelling,
                 "super": superclass_name,
                 "protocols": set(),
@@ -882,12 +1006,16 @@ class FrameworkParser(object):
 
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
+                assert typestr is not None
+
                 class_info["properties"].append(
                     {
                         "name": decl.spelling,
                         "typestr": typestr,
                         "typestr_special": special,
+                        "category": None,
                         "attributes": decl.get_property_attributes(),
+                        "availability": self._get_availability(node),
                     }
                 )
 
@@ -899,17 +1027,13 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added class: " + node.spelling)
 
-    def add_macro(self, macro_name):
+    def add_macro(self, macro_name: str):
         self.macro_names.add(macro_name)
         if self.verbose:
             print("Noted macro: " + macro_name)
 
-    def add_category(self, node):
+    def add_category(self, node: Cursor):
         category_name = node.spelling
-        print(node.spelling)
-        # dump_node(node)
-        # class_cursor = node.get_category_class_cursor().referenced
-        # class_name = class_cursor.referenced.spelling
         for decl in node.get_children():
             if decl.kind == CursorKind.OBJC_CLASS_REF:
                 class_name = decl.spelling
@@ -920,15 +1044,22 @@ class FrameworkParser(object):
         if (class_name or "") == "":
             print("s")
 
+        class_info: ClassInfo
+
         if class_name in self.classes:
             class_info = self.classes[class_name]
         else:
-            class_info = self.classes[class_name] = {
+            self.classes[class_name] = class_info = {
                 "name": class_name,
+                "categories": [],
                 "methods": [],
                 "protocols": set(),
                 "properties": [],
+                "super": None,
+                "availability": None,
             }
+
+        class_info["categories"].append(category_name)
 
         for proto_ref in node.get_adopted_protocol_nodes():
             proto_str = proto_ref.referenced.spelling
@@ -940,16 +1071,19 @@ class FrameworkParser(object):
                 or decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL
             ):
                 meth = self.__extract_methoddecl(decl)
+                meth["category"] = category_name
                 class_info["methods"].append(meth)
 
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
+                assert typestr is not None
                 class_info["properties"].append(
                     {
                         "name": decl.spelling,
                         "typestr": typestr,
                         "typestr_special": special,
                         "attributes": decl.get_property_attributes(),
+                        "category": category_name,
                         "availability": self._get_availability(decl),
                     }
                 )
@@ -971,7 +1105,7 @@ class FrameworkParser(object):
     # operates on a single define and not the whole
     # file and no longer makes its own invocation, but uses
     # libclang with the PARSE_DETAILED_PROCESSING_RECORD option
-    def parse_define(self, define_str, curfile=""):
+    def parse_define(self, define_str: str, curfile: str = "") -> None:
         if not define_str.startswith("#define "):
             define_str = "#define " + define_str
         lines = [define_str]
@@ -1015,7 +1149,7 @@ class FrameworkParser(object):
 
                 m = INT_RE.match(value)
                 if m is not None:
-                    self.enum_values[key] = int(m.group(1), 0)
+                    self.literals[key] = {"value": int(m.group(1), 0)}
                     if self.verbose:
                         print(
                             "Added enum_value name: "
@@ -1027,7 +1161,7 @@ class FrameworkParser(object):
 
                 m = FLOAT_RE.match(value)
                 if m is not None:
-                    self.literals[key] = float(m.group(1))
+                    self.literals[key] = {"value": float(m.group(1))}
                     if self.verbose:
                         print(
                             "Added macro literal name: "
@@ -1063,7 +1197,7 @@ class FrameworkParser(object):
 
                 m = UNICODE2_RE.match(value)
                 if m is not None:
-                    self.literals[key] = m.group(1)
+                    self.literals[key] = {"value": m.group(1), "unicode": True}
                     if self.verbose:
                         print(
                             "Added macro literal name: "
@@ -1074,7 +1208,7 @@ class FrameworkParser(object):
                     continue
 
                 if value in ("nil", "NULL", "Nil"):
-                    self.literals[key] = None
+                    self.literals[key] = {"value": None}
                     if self.verbose:
                         print(
                             "Added macro literal name: "
@@ -1107,7 +1241,7 @@ class FrameworkParser(object):
 
                 if value == "(INT_MAX-1)":
                     if self.arch in ("i386", "ppc"):
-                        self.enum_values[key] = (1 << 31) - 1
+                        self.literals[key] = {"value": (1 << 31) - 1}
                         if self.verbose:
                             print(
                                 "Added enum_values name: "
@@ -1117,8 +1251,8 @@ class FrameworkParser(object):
                             )
                         continue
 
-                    elif self.arch in ("x86_64", "ppc64"):
-                        self.enum_values[key] = (1 << 63) - 1
+                    elif self.arch in ("x86_64", "ppc64", "arm64"):
+                        self.literals[key] = {"value": (1 << 63) - 1}
                         if self.verbose:
                             print(
                                 "Added enum_values name: "
@@ -1153,7 +1287,7 @@ class FrameworkParser(object):
                 m = ERR_SUB_DEFINE_RE.match(value)
                 if m is not None:
                     v = FrameworkParser.__parse_int(m.group(1))
-                    self.enum_values[key] = (v & 0xFFF) << 14
+                    self.literals[key] = {"value": (v & 0xFFF) << 14}
                     if self.verbose:
                         print(
                             "Added enum_values name: "
@@ -1166,7 +1300,7 @@ class FrameworkParser(object):
                 m = ERR_SYSTEM_DEFINE_RE.match(value)
                 if m is not None:
                     v = FrameworkParser.__parse_int(m.group(1))
-                    self.enum_values[key] = (v & 0x3F) << 26
+                    self.literals[key] = {"value": (v & 0x3F) << 26}
                     if self.verbose:
                         print(
                             "Added enum_values name: "
@@ -1180,7 +1314,7 @@ class FrameworkParser(object):
                 if m is not None:
                     # For #define's like this:
                     #     #define kDSpEveryContext ((DSpContextReference)NULL)
-                    self.literals[key] = None
+                    self.literals[key] = {"value": None}
                     if self.verbose:
                         print(
                             "Added literals name: "
@@ -1194,7 +1328,7 @@ class FrameworkParser(object):
                 m = SC_SCHEMA_RE.match(value)
                 if m is not None:
                     # noinspection PyProtectedMember
-                    self.externs[key] = objc._C_ID
+                    self.externs[key] = {"typestr": objc._C_ID}
                     if self.verbose:
                         print(
                             "Added externs name: "
@@ -1258,7 +1392,7 @@ class FrameworkParser(object):
                         )
 
     @staticmethod
-    def __node_is_cferror_ptr(node):
+    def __node_is_cferror_ptr(node: Cursor) -> bool:
         """
 
         @type node: Cursor
@@ -1279,7 +1413,7 @@ class FrameworkParser(object):
         return False
 
     @staticmethod
-    def __index_of_printf_format_arg(node):
+    def __index_of_printf_format_arg(node: Cursor) -> typing.Optional[int]:
         """
 
         @type node: Cursor
@@ -1328,7 +1462,7 @@ class FrameworkParser(object):
 
         return index_of_format_arg
 
-    def __extract_function_like_thing(self, thing):
+    def __extract_function_like_thing(self, thing: Cursor) -> CallbackInfo:
         """
 
         @rtype : dict
@@ -1336,8 +1470,18 @@ class FrameworkParser(object):
         return_type = thing.get_result()
         assert return_type.kind != TypeKind.INVALID
 
-        result = {}
-        result["retval"] = {"typestr": self.__get_typestr(return_type)[0]}
+        result: CallbackInfo = {}
+
+        typestr = self.__get_typestr(return_type)[0]
+        assert typestr is not None
+
+        result["retval"] = {"typestr": typestr}
+
+        if return_type.nullability == NullabilityKind.NONNULL:
+            result["retval"]["null_accepted"] = False
+        elif return_type.nullability == NullabilityKind.NULLABLE:
+            result["retval"]["null_accepted"] = True
+
         result["args"] = []
 
         arg_types_iter = thing.argument_types()
@@ -1348,14 +1492,31 @@ class FrameworkParser(object):
 
         for arg in arg_types:
             assert arg.kind != TypeKind.INVALID
-            result["args"].append({"typestr": self.__get_typestr(arg)[0]})
+            typestr = self.__get_typestr(arg)[0]
+            assert typestr is not None
+
+            arginfo: CallbackArgInfo
+            arginfo = {"typestr": typestr}
+
+            if arg.nullability == NullabilityKind.NONNULL:
+                arginfo["null_accepted"] = False
+            elif arg.nullability == NullabilityKind.NULLABLE:
+                arginfo["null_accepted"] = True
+
+            if arg.kind == TypeKind.BLOCKPOINTER:
+                arginfo["callable"] = self.__extract_block2(arg.type)
+
+            if arg.looks_like_function:
+                arginfo["callable"] = self.__extract_function2(arg.type)
+
+            result["args"].append(arginfo)
 
         if len(result["args"]) == 0:
-            result["args"].append({"name": None, "typestr": b"v"})
+            result["args"].append({"typestr": b"v"})
 
         return result
 
-    def __extract_block(self, block):
+    def __extract_block(self, block: Cursor) -> CallbackInfo:
         """
 
         @rtype : dict
@@ -1370,7 +1531,107 @@ class FrameworkParser(object):
 
         return self.__extract_function_like_thing(block)
 
-    def __extract_function(self, func):
+    # The three "...2" methods below are functionally identical except
+    # for (a) type annotations and (b) not suppporting callbacks themselfes.
+    #
+
+    def __extract_function_like_thing2(self, thing: Cursor) -> CallbackInfo2:
+        """
+
+        @rtype : dict
+        """
+        return_type = thing.get_result()
+        assert return_type.kind != TypeKind.INVALID
+
+        result: CallbackInfo2 = {}
+
+        typestr = self.__get_typestr(return_type)[0]
+        assert typestr is not None
+
+        result["retval"] = {"typestr": typestr}
+
+        if return_type.nullability == NullabilityKind.NONNULL:
+            result["retval"]["null_accepted"] = False
+        elif return_type.nullability == NullabilityKind.NULLABLE:
+            result["retval"]["null_accepted"] = True
+
+        result["args"] = []
+
+        arg_types_iter = thing.argument_types()
+        arg_types = [] if arg_types_iter is None else list(arg_types_iter)
+
+        if thing.is_function_variadic():
+            result["variadic"] = True
+
+        for arg in arg_types:
+            assert arg.kind != TypeKind.INVALID
+            typestr = self.__get_typestr(arg)[0]
+            assert typestr is not None
+
+            arginfo: CallbackArgInfo2
+            arginfo = {"typestr": typestr}
+
+            if arg.nullability == NullabilityKind.NONNULL:
+                arginfo["null_accepted"] = False
+            elif arg.nullability == NullabilityKind.NULLABLE:
+                arginfo["null_accepted"] = True
+
+            if arg.kind == TypeKind.BLOCKPOINTER:
+                print("2nd level nested blocks not supported")
+                # arginfo["callable"] = self.__extract_block2(arg.type)
+
+            if arg.looks_like_function:
+                print("2nd level nested callbacks not supported")
+                # arginfo["callable"] = self.__extract_function2(arg_type)
+
+            result["args"].append(arginfo)
+
+        if len(result["args"]) == 0:
+            result["args"].append({"typestr": b"v"})
+
+        return result
+
+    def __extract_block2(self, block: Cursor) -> CallbackInfo2:
+        """
+
+        @rtype : dict
+        """
+        if isinstance(block, Cursor):
+            block = block.type
+
+        assert isinstance(block, Type), "huh"
+
+        if isinstance(block, Type) and block.kind == TypeKind.BLOCKPOINTER:
+            block = block.get_pointee()
+
+        return self.__extract_function_like_thing2(block)
+
+    def __extract_function2(self, func: Cursor) -> CallbackInfo2:
+        """
+
+        @rtype : dict
+        """
+        if isinstance(func, Cursor):
+            func = func.type
+
+        assert isinstance(func, Type), "huh"
+
+        # func = func.get_canonical()
+        # Going straight to the canonical robs us of "special" conversions
+        if func.kind == TypeKind.TYPEDEF:
+            td = func.declaration
+            ult = None if td is None else td.underlying_typedef_type_valid
+            if ult:
+                func = ult
+            else:
+                func = func.get_canonical()
+
+        while func.kind == TypeKind.POINTER:
+            func = func.get_pointee()
+
+        return self.__extract_function_like_thing2(func)
+
+    def __extract_function(self, func: Cursor) -> CallbackInfo:
         """
 
         @rtype : dict
@@ -1459,7 +1720,7 @@ class FrameworkParser(object):
 
         return meth
 
-    def __includes_string(self):
+    def __includes_string(self) -> str:
         """
 
         @rtype : str
@@ -1479,7 +1740,7 @@ class FrameworkParser(object):
         return include_string
 
     @staticmethod
-    def __parse_int(value):
+    def __parse_int(value: typing.Union[int, str]) -> int:
         """
         Parse a C integer literal and return its value
 
@@ -1492,7 +1753,7 @@ class FrameworkParser(object):
         value = value.lower().rstrip("l").rstrip("u")
         return int(value, 0)
 
-    def get_typename(self, obj):
+    def get_typename(self, obj: typing.Union[Cursor, Type]) -> typing.Optional[str]:
         """
         Return the name of a type when that name is relevant
         for PyObjC (class name, typedef name).
@@ -1563,7 +1824,7 @@ class FrameworkParser(object):
                 )
             elif is_type:
                 cached_type_str = self.__typestr_from_type(
-                    obj, exogenous_name=exogenous_name
+                    typing.cast(Type, obj), exogenous_name=exogenous_name
                 )
 
             assert cached_type_str is not None
@@ -1573,7 +1834,9 @@ class FrameworkParser(object):
         return cached_type_str
 
     # noinspection PyProtectedMember
-    def __typestr_from_type(self, clang_type, exogenous_name=None):
+    def __typestr_from_type(
+        self, clang_type: Type, exogenous_name: typing.Optional[str] = None
+    ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
 
         @type clang_type: Type
@@ -1585,8 +1848,8 @@ class FrameworkParser(object):
         """
         assert isinstance(clang_type, Type)
 
-        typestr = None
-        special = False
+        typestr: typing.Optional[bytes] = None
+        special: bool = False
         assert clang_type is not None, "bad type"
 
         # Check for built in types
@@ -1610,7 +1873,7 @@ class FrameworkParser(object):
                     typedecl, exogenous_name=exogenous_name
                 )
             elif clang_type.looks_like_function:
-                typestr = "?"
+                typestr = b"?"
                 special = False
             else:
                 canonical = clang_type.get_canonical()
@@ -1632,7 +1895,7 @@ class FrameworkParser(object):
             t, special = self.__typestr_from_type(
                 pointee, exogenous_name=exogenous_name
             )
-            typestr = objc._C_PTR + (t if t is not None else "")
+            typestr = objc._C_PTR + (t if t is not None else b"")
 
         # CXType_BlockPointer = 102,
         elif clang_type.kind == TypeKind.BLOCKPOINTER:
@@ -1701,11 +1964,9 @@ class FrameworkParser(object):
                 # here, but we can't because we treat some typedefs
                 # like BOOL and Boolean and UniChar specially.
                 next_type = clang_type.next_typedefed_type
-                exogenous_name = (
-                    exogenous_name
-                    if exogenous_name
-                    else clang_type.declaration.spelling
-                )
+                if not exogenous_name:
+                    if clang_type.declaration is not None:
+                        exogenous_name = clang_type.declaration.spelling
                 if next_type:
                     typestr, special = self.__typestr_from_type(
                         next_type, exogenous_name=exogenous_name
@@ -1714,6 +1975,8 @@ class FrameworkParser(object):
                     typestr, special = self.__typestr_from_type(
                         canonical_type, exogenous_name=exogenous_name
                     )
+
+                assert typestr is not None
 
                 if typestr == b"^?" and clang_type.looks_like_function:
                     # Maybe we can do better in the future?
@@ -1757,19 +2020,21 @@ class FrameworkParser(object):
             result.append(objc._C_ARY_B)
             dim = clang_type.element_count
             if dim is None or int(dim) is None or int(dim) == 0:
-                t = ""
+                t = b""
                 s = False
                 element_type = clang_type.element_type
                 if element_type:
                     t, s = self.__typestr_from_type(
                         element_type, exogenous_name=exogenous_name
                     )
+                    assert t is not None
                 return objc._C_PTR + t, s
             else:
                 result.append(b"%d" % (dim,))
 
             element_type = clang_type.element_type
             t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
+            assert t is not None
             result.append(t)
             if s:
                 special = True
@@ -1842,7 +2107,9 @@ class FrameworkParser(object):
     ]
 
     # noinspection PyProtectedMember
-    def __typestr_from_node(self, node, exogenous_name=None):
+    def __typestr_from_node(
+        self, node: Cursor, exogenous_name: typing.Optional[str] = None
+    ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
 
         @type node: Cursor
@@ -1853,8 +2120,8 @@ class FrameworkParser(object):
         """
         assert isinstance(node, Cursor)
 
-        special = False
-        typestr = node.objc_type_encoding
+        special: bool = False
+        typestr: typing.Optional[bytes] = node.objc_type_encoding
         if typestr != b"?" and typestr != b"" and typestr is not None:
             return typestr, special
 
