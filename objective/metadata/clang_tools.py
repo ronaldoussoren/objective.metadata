@@ -1,4 +1,4 @@
-from .vendored import clang
+from . import clang
 
 
 class NodeVisitor(object):

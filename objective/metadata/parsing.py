@@ -9,7 +9,7 @@ import sys
 
 import objc
 
-from .vendored.clang import (
+from .clang import (
     Config,
     Cursor,
     CursorKind,

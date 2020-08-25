@@ -195,7 +195,7 @@ def main():
     args = parser.parse_args()
 
     if getattr(args, "libclang", None):
-        from .vendored import clang
+        from . import clang
 
         clang.Config.set_library_file(args.libclang)
 
