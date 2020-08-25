@@ -661,11 +661,19 @@ class FrameworkParser(object):
 
         else:
             for m in n.get_children():
+                # This needs to be fixed: When 'static const float X = FLT_MAX' has
+                # an empty token_string.
                 if m.kind == CursorKind.INTEGER_LITERAL:
-                    self.literals[name] = {"value": int(m.token_string)}
+                    if m.token_string == "":
+                        print(f"Ignore {name!r}: empty token string")
+                    else:
+                        self.literals[name] = {"value": int(m.token_string)}
 
                 elif m.kind == CursorKind.FLOATING_LITERAL:
-                    self.literals[name] = {"value": float(m.token_string)}
+                    if m.token_string == "":
+                        print(f"Ignore {name!r}: empty token string")
+                    else:
+                        self.literals[name] = {"value": float(m.token_string)}
 
     def add_extern(self, name: str, node: Cursor) -> None:
         node_type = node.type
