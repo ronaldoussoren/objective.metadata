@@ -1,3 +1,4 @@
+# This is a heavily modified version of the clang Python bindings
 r"""
 Clang Indexing Library Bindings
 ===============================
@@ -58,13 +59,16 @@ class c_interop_string(ctypes.c_char_p):
         return self.value
 
     @property
-    def value(self):
-        if super(ctypes.c_char_p, self).value is None:
+    def value(self) -> typing.Optional[str]:
+        super_value = super(ctypes.c_char_p, self).value
+        if super_value is None:
             return None
-        return super(ctypes.c_char_p, self).value.decode("utf8")
+
+        else:
+            return super_value.decode()
 
     @classmethod
-    def from_param(cls, param):
+    def from_param(cls, param: typing.Optional[typing.Union[str, bytes]]):
         if isinstance(param, str):
             return cls(param)
         if isinstance(param, bytes):
@@ -77,11 +81,11 @@ class c_interop_string(ctypes.c_char_p):
         )
 
     @staticmethod
-    def to_python_string(x, *args):
+    def to_python_string(x, *args):  # This needs type annotations
         return x.value
 
 
-def b(x):
+def b(x: typing.Union[str, bytes]) -> bytes:  # Is this still needed?
     if isinstance(x, bytes):
         return x
     return x.encode("utf8")
@@ -92,6 +96,7 @@ def b(x):
 # integer and pass the wrong value on platforms where int != void*. Work around
 # this by marshalling object arguments as void**.
 c_object_p = ctypes.POINTER(ctypes.c_void_p)
+
 
 # Need better annotation for Callable
 callbacks: typing.Dict[str, typing.Callable] = {}
@@ -107,6 +112,19 @@ class TranslationUnitLoadError(Exception):
     """
 
     pass
+
+
+class SaveError(enum.IntEnum):
+    # Indicates that an unknown error occurred. This typically indicates that
+    # I/O failed during save.
+    ERROR_UNKNOWN = 1
+
+    # Indicates that errors during translation prevented saving. The errors
+    # should be available via the TranslationUnit's diagnostics.
+    ERROR_TRANSLATION_ERRORS = 2
+
+    # Indicates that the translation unit was somehow invalid.
+    ERROR_INVALID_TU = 3
 
 
 class TranslationUnitSaveError(Exception):
@@ -128,17 +146,8 @@ class TranslationUnitSaveError(Exception):
     # Indicates that the translation unit was somehow invalid.
     ERROR_INVALID_TU = 3
 
-    def __init__(self, enumeration, message):
-        assert isinstance(enumeration, int)
-
-        if enumeration < 1 or enumeration > 3:
-            raise Exception(
-                "Encountered undefined TranslationUnit save error "
-                "constant: %d. Please file a bug to have this "
-                "value supported." % enumeration
-            )
-
-        self.save_error = enumeration
+    def __init__(self, enumeration: int, message: str):
+        self.save_error = SaveError(enumeration)
         Exception.__init__(self, "Error %d: %s" % (enumeration, message))
 
 
@@ -179,7 +188,11 @@ class _CXString(ctypes.Structure):
         conf.lib.clang_disposeString(self)
 
     @staticmethod
-    def from_result(res, fn=None, args=None):
+    def from_result(
+        res: "_CXString",
+        fn: typing.Any = None,
+        args: typing.Tuple[typing.Any, ...] = None,
+    ):
         assert isinstance(res, _CXString)
         return conf.lib.clang_getCString(res)
 
@@ -206,7 +219,7 @@ class SourceLocation(ctypes.Structure):
         return self._data
 
     @staticmethod
-    def from_position(tu, file, line, column):
+    def from_position(tu: "TranslationUnit", file: str, line: int, column: int):
         """
         Retrieve the source location associated with a given file/line/column in
         a particular translation unit.
@@ -214,7 +227,7 @@ class SourceLocation(ctypes.Structure):
         return conf.lib.clang_getLocation(tu, file, line, column)
 
     @staticmethod
-    def from_offset(tu, file, offset):
+    def from_offset(tu: "TranslationUnit", file: str, offset: int):
         """Retrieve a SourceLocation from a given character offset.
 
         tu -- TranslationUnit file belongs to
@@ -224,32 +237,35 @@ class SourceLocation(ctypes.Structure):
         return conf.lib.clang_getLocationForOffset(tu, file, offset)
 
     @property
-    def file(self):
+    def file(self) -> "typing.Optional[File]":
         """Get the file represented by this source location."""
         return self._get_instantiation()[0]
 
     @property
-    def line(self):
+    def line(self) -> int:
         """Get the line represented by this source location."""
         return self._get_instantiation()[1]
 
     @property
-    def column(self):
+    def column(self) -> int:
         """Get the column represented by this source location."""
         return self._get_instantiation()[2]
 
     @property
-    def offset(self):
+    def offset(self) -> int:
         """Get the file offset represented by this source location."""
         return self._get_instantiation()[3]
 
-    def __eq__(self, other):
+    def __eq__(self, other: typing.Any) -> bool:
+        if not isinstance(other, SourceLocation):
+            return False
         return conf.lib.clang_equalLocations(self, other)
 
-    def __ne__(self, other):
+    def __ne__(self, other: typing.Any) -> bool:
         return not self.__eq__(other)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        filename: typing.Optional[str]
         if self.file:
             filename = self.file.name
         else:
@@ -274,11 +290,11 @@ class SourceRange(ctypes.Structure):
     ]
 
     @staticmethod
-    def from_locations(start, end):
+    def from_locations(start: SourceLocation, end: SourceLocation) -> "SourceRange":
         return conf.lib.clang_getRange(start, end)
 
     @property
-    def start(self):
+    def start(self) -> SourceLocation:
         """
         Return a SourceLocation representing the first character within a
         source range.
@@ -286,31 +302,42 @@ class SourceRange(ctypes.Structure):
         return conf.lib.clang_getRangeStart(self)
 
     @property
-    def end(self):
+    def end(self) -> SourceLocation:
         """
         Return a SourceLocation representing the last character within a
         source range.
         """
         return conf.lib.clang_getRangeEnd(self)
 
-    def __eq__(self, other):
+    def __eq__(self, other: typing.Any) -> bool:
+        if not isinstance(other, SourceRange):
+            return False
         return conf.lib.clang_equalRanges(self, other)
 
-    def __ne__(self, other):
+    def __ne__(self, other: typing.Any) -> bool:
         return not self.__eq__(other)
 
-    def __contains__(self, other):
+    def __contains__(self, other: typing.Any) -> bool:
         """Useful to detect the Token/Lexer bug"""
         if not isinstance(other, SourceLocation):
             return False
-        if other.file is None and self.start.file is None:
-            pass
-        elif (
-            self.start.file.name != other.file.name
-            or other.file.name != self.end.file.name
-        ):
-            # same file name
-            return False
+
+        if other.file is None:
+            if self.start.file is not None:
+                return False
+
+        elif other.file is not None:
+            if self.start.file is None:
+                return False
+
+            assert self.end.file is not None
+
+            if (
+                self.start.file.name != other.file.name
+                or other.file.name != self.end.file.name
+            ):
+                return False
+
         # same file, in between lines
         if self.start.line < other.line < self.end.line:
             return True
@@ -324,11 +351,12 @@ class SourceRange(ctypes.Structure):
                 return True
         return False
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<SourceRange start %r, end %r>" % (self.start, self.end)
 
-    def get_raw_contents(self):
-        contents = None
+    def get_raw_contents(self) -> typing.Optional[str]:
+        if self.start.file is None or self.end.file is None:
+            return None
 
         start_file_name = self.start.file.name
         end_file_name = self.end.file.name
@@ -3769,24 +3797,27 @@ class File(ClangObject):
     """
 
     @staticmethod
-    def from_name(translation_unit, file_name):
+    def from_name(
+        translation_unit: "TranslationUnit",
+        file_name: typing.Union[str, os.PathLike[str]],
+    ) -> "File":
         """Retrieve a file handle within the given translation unit."""
         return File(conf.lib.clang_getFile(translation_unit, os.fspath(file_name)))
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Return the complete file and path name of the file."""
         return conf.lib.clang_getFileName(self)
 
     @property
-    def time(self):
+    def time(self) -> float:
         """Return the last modification time of the file."""
         return conf.lib.clang_getFileTime(self)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<File: %s>" % (self.name)
 
     @staticmethod

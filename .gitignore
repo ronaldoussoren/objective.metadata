@@ -10,7 +10,6 @@ dist
 *.swp
 info-files
 exceptions
-metadata
 doc/_build
 
 objective/metadata/yacctab.py
