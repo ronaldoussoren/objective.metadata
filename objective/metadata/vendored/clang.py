@@ -38,6 +38,7 @@ call is efficient.
 import collections.abc
 import ctypes
 import enum
+import itertools
 import os
 import typing
 
@@ -1495,6 +1496,35 @@ class ObjcDeclQualifier(object):
             raise ValueError(value)
 
 
+class Version(ctypes.Structure):
+    _fields_ = [
+        ("major", ctypes.c_int),
+        ("minor", ctypes.c_int),
+        ("subminor", ctypes.c_int),
+    ]
+
+    def __repr__(self):
+        if self.subminor == -1:
+            return f"{self.major}.{self.minor}"
+        else:
+            return f"{self.major}.{self.minor}.{self.subminor}"
+
+
+class PlatformAvailability(ctypes.Structure):
+    """
+    Availability information
+    """
+
+    _fields_ = [
+        ("platform", _CXString),
+        ("introduced", Version),
+        ("deprecated", Version),
+        ("obsoleted", Version),
+        ("unavailable", ctypes.c_int),
+        ("message", _CXString),
+    ]
+
+
 # Cursors
 
 
@@ -2063,6 +2093,246 @@ class Cursor(ctypes.Structure):
                 )
         return self._enum_value
 
+    def get_category_class_cursor(self):
+        if self.kind != CursorKind.OBJC_CATEGORY_DECL:
+            return None
+
+        first_child_cursor = None
+        for child in self.get_children():
+            first_child_cursor = child
+            break
+
+        if (
+            first_child_cursor is None
+            or first_child_cursor.kind != CursorKind.OBJC_CLASS_REF
+        ):
+            return None
+
+        return first_child_cursor
+
+    def get_category_class_name(self):
+        category_class_cursor = self.get_category_class_cursor()
+        return (
+            None
+            if category_class_cursor is None
+            else getattr(category_class_cursor.type, "spelling", None)
+        )
+
+    def get_category_name(self):
+        if self.kind == CursorKind.OBJC_CATEGORY_DECL:
+            return self.spelling
+        else:
+            return None
+
+    def get_is_informal_protocol(self):
+        if self.kind == CursorKind.OBJC_CATEGORY_DECL:
+            return (
+                self.get_category_class_name() == "NSObject"
+                or "Delegate" in self.spelling
+            )
+        else:
+            return False
+
+    def get_adopted_protocol_nodes(self):
+        if self.kind not in [
+            CursorKind.OBJC_CATEGORY_DECL,
+            CursorKind.OBJC_INTERFACE_DECL,
+            CursorKind.OBJC_PROTOCOL_DECL,
+        ]:
+            return None
+
+        protocols = []
+        for child in self.get_children():
+            if child.kind == CursorKind.OBJC_PROTOCOL_REF:
+                protocols.append(child)
+
+        return protocols
+
+    @property
+    def token_string(self):
+        return "".join(token.spelling for token in self.get_tokens())
+
+    def get_struct_field_decls(self):
+        if self.kind != CursorKind.STRUCT_DECL:
+            return None
+        return filter(lambda x: x.kind == CursorKind.FIELD_DECL, self.get_children())
+
+    def get_function_specifiers(self):
+        if self.kind != CursorKind.FUNCTION_DECL:
+            return None
+
+        # function specifiers are "inline", "explicit" and
+        # "virtual" the last two being C++ only
+        func_name = self.spelling
+        func_specs = set()
+
+        if self.is_virtual:
+            func_specs.add("virtual")
+
+        # I was originally doing this by iterating tokens, but
+        # that expanded macros, which expanded #if/#else macros
+        # some clauses of which had inline in them and was causing false alarms.
+        # Hopefully this is better.
+
+        raw_string = self.extent.get_raw_contents()
+        before_func = raw_string.split(func_name)[0]
+
+        if "inline" in before_func or "INLINE" in before_func:
+            func_specs.add("inline")
+        if "virtual" in before_func:
+            func_specs.add("virtual")
+        if "explicit" in before_func:
+            func_specs.add("explicit")
+
+        return list(func_specs)
+
+    @property
+    def first_child(self):
+        child_holder = []
+
+        def first_child_visitor(child, parent, holder):
+            assert child != conf.lib.clang_getNullCursor()
+            assert parent != child
+            # Create reference to TU so it isn't GC'd before Cursor.
+            child._tu = self._tu
+            holder.append(child)
+            return 0  # CXChildVisit_Break
+
+        conf.lib.clang_visitChildren(
+            self, callbacks["cursor_visit"](first_child_visitor), child_holder
+        )
+
+        return None if len(child_holder) == 0 else child_holder[0]
+
+    def get_property_attributes(self):
+        if self.kind != CursorKind.OBJC_PROPERTY_DECL:
+            return None
+
+        attr_flags = conf.lib.clang_Cursor_getObjCPropertyAttributes(self, 0)
+
+        attrs = set()
+        for flag, attr in _attr_flag_dict.items():
+            if attr_flags & flag:
+                attrs.add(attr)
+
+        if "getter" in attrs or "setter" in attrs:
+            for string in self.objc_type_encoding.split(","):
+                if string.startswith("G"):
+                    attrs.remove("getter")
+                    attrs.add(("getter", string[1:]))
+                elif string.startswith("S"):
+                    attrs.remove("setter")
+                    attrs.add(("setter", string[1:]))
+
+        return attrs
+
+    @property
+    def canonical_distint(self):
+        if self == self.canonical:
+            return None
+        else:
+            return self.canonical
+
+    @property
+    def referenced_distinct(self):
+        if (not self.referenced) or self == self.referenced:
+            return None
+        else:
+            return self.referenced
+
+    @property
+    def is_virtual(self):
+        return conf.lib.clang_CXXMethod_isVirtual(self)
+
+    @property
+    def is_optional_for_protocol(self):
+        return bool(conf.lib.clang_Cursor_isObjCOptional(self))
+
+    @property
+    def is_variadic(self):
+        return bool(conf.lib.clang_Cursor_isVariadic(self))
+
+    @property
+    def type_valid(self):
+        if self.type.kind == TypeKind.INVALID:
+            return None
+        else:
+            return self.type
+
+    @property
+    def result_type_valid(self):
+        if self.result_type.kind == TypeKind.INVALID:
+            return None
+        else:
+            return self.result_type
+
+    @property
+    def result_type(self):
+        # See note above;  Yes, we are *replacing* the
+        # implementation of result_type from libclang
+        if not hasattr(self, "_result_type"):
+            self._result_type = conf.lib.clang_getCursorResultType(self)
+        return self._result_type
+
+    @property
+    def platform_availability(self):
+        always_deprecated = ctypes.c_int()
+        deprecated_message = _CXString()
+        always_unavailable = ctypes.c_int()
+        unavailable_message = _CXString()
+        availability_size = 10
+        availability = (PlatformAvailability * availability_size)()
+
+        r = conf.lib.clang_getCursorPlatformAvailability(
+            self,
+            ctypes.byref(always_deprecated),
+            ctypes.byref(deprecated_message),
+            ctypes.byref(always_unavailable),
+            ctypes.byref(unavailable_message),
+            availability,
+            availability_size,
+        )
+
+        result = {
+            "always_deprecated": bool(always_deprecated.value),
+            "deprecated_message": _CXString.from_result(deprecated_message),
+            "always_unavailable": bool(always_unavailable.value),
+            "unavailable_message": _CXString.from_result(unavailable_message),
+            "platform": {},
+        }
+        for i in range(r):
+            result["platform"][_CXString.from_result(availability[i].platform)] = {
+                "introduced": availability[i].introduced
+                if availability[i].introduced.major != -1
+                else None,
+                "deprecated": availability[i].deprecated
+                if availability[i].deprecated.major != -1
+                else None,
+                "obsoleted": availability[i].obsoleted
+                if availability[i].obsoleted.major != -1
+                else None,
+                "unavailable": bool(availability[i].unavailable),
+                "message": _CXString.from_result(availability[i].message),
+            }
+
+        return result
+
+
+_attr_flag_dict = {
+    0x01: "readonly",
+    0x02: "getter",
+    0x04: "assign",
+    0x08: "readwrite",
+    0x10: "retain",
+    0x20: "copy",
+    0x40: "nonatomic",
+    0x80: "setter",
+    0x100: "atomic",
+    0x200: "weak",
+    0x400: "strong",
+    0x800: "unsafe_unretained",
+}
+
 
 class StorageClass(enum.IntEnum):
     """
@@ -2148,6 +2418,13 @@ class TypeKind(enum.IntEnum):
     def spelling(self):
         """Retrieve the spelling of this TypeKind."""
         return conf.lib.clang_getTypeKindSpelling(self.value)
+
+    def objc_type_for_arch(self, arch):
+        assert arch is not None
+        typekind_by_arch_map = _typekind_by_arch_map.get(arch, None)
+        assert typekind_by_arch_map is not None
+        typekind = typekind_by_arch_map.get(self)
+        return typekind
 
     INVALID = 0
     UNEXPOSED = 1
@@ -2260,6 +2537,106 @@ class TypeKind(enum.IntEnum):
     OCLIntelSubgroupAVCImeResultDualRefStreamout = 173
     OCLIntelSubgroupAVCImeSingleRefStreamin = 174
     OCLIntelSubgroupAVCImeDualRefStreamin = 175
+
+
+# noinspection PyProtectedMember
+_typekind_to_objc_types_map_common = {
+    # The comments are the list of Clang's "built-ins"
+    # Not sure what to do about some of the more esoteric ones
+    # CXType_Void = 2,
+    TypeKind.VOID: objc._C_VOID,
+    # CXType_Bool = 3,
+    TypeKind.BOOL: objc._C_BOOL,
+    # CXType_Char_U = 4,
+    TypeKind.CHAR_U: objc._C_UCHR,
+    # CXType_UChar = 5,
+    TypeKind.UCHAR: objc._C_UCHR,
+    # CXType_Char16 = 6,
+    TypeKind.CHAR16: objc._C_USHT,  # determined empirically
+    # CXType_Char32 = 7,
+    TypeKind.CHAR32: objc._C_UINT,  # determined empirically
+    # CXType_UShort = 8,
+    TypeKind.USHORT: objc._C_USHT,
+    # CXType_UInt = 9,
+    TypeKind.UINT: objc._C_UINT,
+    # CXType_ULongLong = 11,
+    TypeKind.ULONGLONG: objc._C_ULNGLNG,
+    # CXType_UInt128 = 12,
+    TypeKind.UINT128: "T",  # determined empirically
+    # CXType_Char_S = 13,
+    TypeKind.CHAR_S: objc._C_CHR,
+    # CXType_SChar = 14,
+    TypeKind.SCHAR: objc._C_CHR,
+    # CXType_WChar = 15,
+    TypeKind.WCHAR: objc._C_INT,  # determined empirically
+    # CXType_Short = 16,
+    TypeKind.SHORT: objc._C_SHT,
+    # CXType_Int = 17,
+    TypeKind.INT: objc._C_INT,
+    # CXType_LongLong = 19,
+    TypeKind.LONGLONG: objc._C_LNGLNG,
+    # CXType_Int128 = 20,
+    TypeKind.INT128: "t",  # determined empirically
+    # CXType_Float = 21,
+    TypeKind.FLOAT: objc._C_FLT,
+    # CXType_Double = 22,
+    TypeKind.DOUBLE: objc._C_DBL,
+    # CXType_LongDouble = 23,
+    TypeKind.LONGDOUBLE: "D",  # determined empirically
+    # CXType_NullPtr = 24,
+    # CXType_Overload = 25,
+    # CXType_Dependent = 26,
+    # CXType_ObjCId = 27,
+    TypeKind.OBJCID: objc._C_ID,
+    # CXType_ObjCClass = 28,
+    TypeKind.OBJCCLASS: objc._C_CLASS,
+    # CXType_ObjCSel = 29,
+    TypeKind.OBJCSEL: objc._C_SEL,
+    TypeKind.BLOCKPOINTER: objc._C_ID + objc._C_UNDEF,
+}
+
+# noinspection PyProtectedMember
+_typekind_to_objc_types_map_64 = {
+    # CXType_ULong = 10,
+    TypeKind.ULONG: objc._C_ULNG_LNG,
+    # CXType_Long = 18,
+    TypeKind.LONG: objc._C_LNG_LNG,
+}
+
+# noinspection PyProtectedMember
+_typekind_to_objc_types_map_32 = {
+    # CXType_ULong = 10,
+    TypeKind.ULONG: objc._C_ULNG,
+    # CXType_Long = 18,
+    TypeKind.LONG: objc._C_LNG,
+}
+
+_typekind_by_arch_map = {
+    "arm64": dict(
+        itertools.chain(
+            _typekind_to_objc_types_map_common.items(),
+            _typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "x86_64": dict(
+        itertools.chain(
+            _typekind_to_objc_types_map_common.items(),
+            _typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "ppc64": dict(
+        itertools.chain(
+            _typekind_to_objc_types_map_common.items(),
+            _typekind_to_objc_types_map_64.items(),
+        )
+    ),
+    "i386": dict(
+        itertools.chain(
+            _typekind_to_objc_types_map_common.items(),
+            _typekind_to_objc_types_map_32.items(),
+        )
+    ),
+}
 
 
 class RefQualifierKind(enum.IntEnum):
@@ -2620,14 +2997,6 @@ class Type(ctypes.Structure):
         if pointee and pointee.kind != TypeKind.INVALID and pointee != self:
             return pointee
         return None
-
-    @property
-    def result_type(self):
-        """Retrieve the Type of the result for this Type."""
-        if not hasattr(self, "_result_type"):
-            self._result_type = conf.lib.clang_getCursorResultType(self)
-
-        return self._result_type
 
     @property
     def valid_type(self) -> typing.Optional["Type"]:
@@ -4007,6 +4376,32 @@ functionList = [
         [Type, callbacks["fields_visit"], ctypes.py_object],
         ctypes.c_uint,
     ),
+    (
+        "clang_getCursorPlatformAvailability",
+        [
+            Cursor,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(_CXString),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(_CXString),
+            ctypes.POINTER(PlatformAvailability),
+        ],
+        ctypes.c_int,
+    ),
+    (
+        "clang_disposeCXPlatformAvailability",
+        [ctypes.POINTER(PlatformAvailability)],
+        None,
+    ),
+    ("clang_getCursorLinkage", [Cursor], ctypes.c_int),
+    ("clang_Cursor_isObjCOptional", [Cursor], ctypes.c_uint),
+    ("clang_getCXXAccessSpecifier", [Cursor], ctypes.c_int),
+    ("clang_Cursor_isVariadic", [Cursor], ctypes.c_uint),
+    ("clang_Cursor_getObjCDeclQualifiers", [Cursor], ctypes.c_uint),
+    ("clang_Cursor_getObjCPropertyAttributes", [Cursor, ctypes.c_uint], ctypes.c_uint),
+    ("clang_getCursorResultType", [Cursor], Type, Type.from_result),
+    ("clang_Type_getNullability", [Type], ctypes.c_uint),
+    ("clang_Type_getModifiedType", [Type], Type),
 ]
 
 

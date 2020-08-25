@@ -14,6 +14,7 @@ from .vendored.clang import (
     Cursor,
     CursorKind,
     Index,
+    LinkageKind,
     NullabilityKind,
     ObjcDeclQualifier,
     TranslationUnit,
@@ -28,7 +29,6 @@ Config.set_library_path(
 
 from objective.metadata.clanghelpers import (  # isort:skip  # noqa: E402
     AbstractClangVisitor,
-    LinkageKind,
 )
 
 
