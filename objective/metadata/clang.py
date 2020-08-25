@@ -46,43 +46,8 @@ import typing
 import objc
 
 
-# Python 3 strings are unicode, translate them to/from utf8 for C-interop.
-class c_interop_string(ctypes.c_char_p):
-    def __init__(self, p=None):
-        if p is None:
-            p = ""
-        if isinstance(p, str):
-            p = p.encode("utf8")
-        super(ctypes.c_char_p, self).__init__(p)
-
-    def __str__(self):
-        return self.value
-
-    @property
-    def value(self) -> typing.Optional[str]:
-        super_value = super(ctypes.c_char_p, self).value
-        if super_value is None:
-            return None
-
-        else:
-            return super_value.decode()
-
-    @classmethod
-    def from_param(cls, param: typing.Optional[typing.Union[str, bytes]]):
-        if isinstance(param, str):
-            return cls(param)
-        if isinstance(param, bytes):
-            return cls(param)
-        if param is None:
-            # Support passing null to C functions expecting char arrays
-            return None
-        raise TypeError(
-            "Cannot convert '{}' to '{}'".format(type(param).__name__, cls.__name__)
-        )
-
-    @staticmethod
-    def to_python_string(x, *args):  # This needs type annotations
-        return x.value
+def c_char_p_to_string(value: bytes, fn: typing.Any, args: typing.Any):
+    return value.decode()
 
 
 def b(x: typing.Union[str, bytes]) -> bytes:  # Is this still needed?
@@ -2908,25 +2873,25 @@ class Type(ctypes.Structure):
         """
         return conf.lib.clang_Type_getNamedType(self)
 
-    def get_align(self):
+    def get_align(self) -> int:
         """
         Retrieve the alignment of the record.
         """
         return conf.lib.clang_Type_getAlignOf(self)
 
-    def get_size(self):
+    def get_size(self) -> int:
         """
         Retrieve the size of the record.
         """
         return conf.lib.clang_Type_getSizeOf(self)
 
-    def get_offset(self, fieldname):
+    def get_offset(self, fieldname: str) -> int:
         """
         Retrieve the offset of a field in the record.
         """
-        return conf.lib.clang_Type_getOffsetOf(self, fieldname)
+        return conf.lib.clang_Type_getOffsetOf(self, fieldname.encode())
 
-    def get_ref_qualifier(self):
+    def get_ref_qualifier(self) -> RefQualifierKind:
         """
         Retrieve the ref-qualifier of the type.
         """
@@ -3508,7 +3473,7 @@ class TranslationUnit(ClangObject):
 
         ptr = conf.lib.clang_parseTranslationUnit(
             index,
-            os.fspath(filename) if filename is not None else None,
+            os.fspath(filename).encode() if filename is not None else None,
             args_array,
             len(args),
             unsaved_array,
@@ -3539,7 +3504,7 @@ class TranslationUnit(ClangObject):
         if index is None:
             index = Index.create()
 
-        ptr = conf.lib.clang_createTranslationUnit(index, os.fspath(filename))
+        ptr = conf.lib.clang_createTranslationUnit(index, os.fspath(filename).encode())
         if not ptr:
             raise TranslationUnitLoadError(filename)
 
@@ -3716,7 +3681,9 @@ class TranslationUnit(ClangObject):
         """
         options = conf.lib.clang_defaultSaveOptions(self)
         result = int(
-            conf.lib.clang_saveTranslationUnit(self, os.fspath(filename), options)
+            conf.lib.clang_saveTranslationUnit(
+                self, os.fspath(filename).encode(), options
+            )
         )
         if result != 0:
             raise TranslationUnitSaveError(result, "Error saving TranslationUnit.")
@@ -3765,7 +3732,7 @@ class TranslationUnit(ClangObject):
                 unsaved_files_array[i].length = len(contents)
         ptr = conf.lib.clang_codeCompleteAt(
             self,
-            os.fspath(path),
+            os.fspath(path).encode(),
             line,
             column,
             unsaved_files_array,
@@ -3802,7 +3769,9 @@ class File(ClangObject):
         file_name: typing.Union[str, os.PathLike[str]],
     ) -> "File":
         """Retrieve a file handle within the given translation unit."""
-        return File(conf.lib.clang_getFile(translation_unit, os.fspath(file_name)))
+        return File(
+            conf.lib.clang_getFile(translation_unit, os.fspath(file_name).encode())
+        )
 
     @property
     def name(self) -> str:
@@ -3962,7 +3931,7 @@ class CompilationDatabase(ClangObject):
         errorCode = ctypes.c_uint()
         try:
             cdb = conf.lib.clang_CompilationDatabase_fromDirectory(
-                os.fspath(buildDir), ctypes.byref(errorCode)
+                os.fspath(buildDir).encode(), ctypes.byref(errorCode)
             )
         except CompilationDatabaseError:
             raise CompilationDatabaseError(
@@ -3976,7 +3945,7 @@ class CompilationDatabase(ClangObject):
         build filename. Returns None if filename is not found in the database.
         """
         return conf.lib.clang_CompilationDatabase_getCompileCommands(
-            self, os.fspath(filename)
+            self, os.fspath(filename).encode()
         )
 
     def getAllCompileCommands(self):
@@ -4055,7 +4024,7 @@ functionList = [
     ("clang_CompilationDatabase_dispose", [c_object_p]),
     (
         "clang_CompilationDatabase_fromDirectory",
-        [c_interop_string, ctypes.POINTER(ctypes.c_uint)],
+        [ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint)],
         c_object_p,
         CompilationDatabase.from_result,
     ),
@@ -4067,7 +4036,7 @@ functionList = [
     ),
     (
         "clang_CompilationDatabase_getCompileCommands",
-        [c_object_p, c_interop_string],
+        [c_object_p, ctypes.c_char_p],
         c_object_p,
         CompileCommands.from_result,
     ),
@@ -4097,7 +4066,7 @@ functionList = [
         "clang_codeCompleteAt",
         [
             TranslationUnit,
-            c_interop_string,
+            ctypes.c_char_p,
             ctypes.c_int,
             ctypes.c_int,
             ctypes.c_void_p,
@@ -4113,7 +4082,7 @@ functionList = [
     ),
     ("clang_codeCompleteGetNumDiagnostics", [CodeCompletionResults], ctypes.c_int),
     ("clang_createIndex", [ctypes.c_int, ctypes.c_int], c_object_p),
-    ("clang_createTranslationUnit", [Index, c_interop_string], c_object_p),
+    ("clang_createTranslationUnit", [Index, ctypes.c_char_p], c_object_p),
     ("clang_CXXConstructor_isConvertingConstructor", [Cursor], bool),
     ("clang_CXXConstructor_isCopyConstructor", [Cursor], bool),
     ("clang_CXXConstructor_isDefaultConstructor", [Cursor], bool),
@@ -4173,12 +4142,7 @@ functionList = [
         _CXString.from_result,
     ),
     ("clang_getCompletionPriority", [ctypes.c_void_p], ctypes.c_int),
-    (
-        "clang_getCString",
-        [_CXString],
-        c_interop_string,
-        c_interop_string.to_python_string,
-    ),
+    ("clang_getCString", [_CXString], ctypes.c_char_p, c_char_p_to_string),
     ("clang_getCursor", [TranslationUnit, SourceLocation], Cursor),
     ("clang_getCursorAvailability", [Cursor], ctypes.c_int),
     ("clang_getCursorDefinition", [Cursor], Cursor, Cursor.from_result),
@@ -4229,7 +4193,7 @@ functionList = [
     ("clang_getEnumConstantDeclUnsignedValue", [Cursor], ctypes.c_ulonglong),
     ("clang_getEnumConstantDeclValue", [Cursor], ctypes.c_longlong),
     ("clang_getEnumDeclIntegerType", [Cursor], Type, Type.from_result),
-    ("clang_getFile", [TranslationUnit, c_interop_string], c_object_p),
+    ("clang_getFile", [TranslationUnit, ctypes.c_char_p], c_object_p),
     ("clang_getFileName", [File], _CXString, _CXString.from_result),
     ("clang_getFileTime", [File], ctypes.c_uint),
     ("clang_getIBOutletCollectionType", [Cursor], Type, Type.from_result),
@@ -4297,8 +4261,8 @@ functionList = [
     (
         "clang_getTUResourceUsageName",
         [ctypes.c_uint],
-        c_interop_string,
-        c_interop_string.to_python_string,
+        ctypes.c_char_p,
+        c_char_p_to_string,
     ),
     ("clang_getTypeDeclaration", [Type], Cursor, Cursor.from_result),
     ("clang_getTypedefDeclUnderlyingType", [Cursor], Type, Type.from_result),
@@ -4327,7 +4291,7 @@ functionList = [
         "clang_parseTranslationUnit",
         [
             Index,
-            c_interop_string,
+            ctypes.c_char_p,
             ctypes.c_void_p,
             ctypes.c_int,
             ctypes.c_void_p,
@@ -4343,7 +4307,7 @@ functionList = [
     ),
     (
         "clang_saveTranslationUnit",
-        [TranslationUnit, c_interop_string, ctypes.c_uint],
+        [TranslationUnit, ctypes.c_char_p, ctypes.c_uint],
         ctypes.c_int,
     ),
     (
@@ -4398,7 +4362,7 @@ functionList = [
         Type,
         Type.from_result,
     ),
-    ("clang_Type_getOffsetOf", [Type, c_interop_string], ctypes.c_longlong),
+    ("clang_Type_getOffsetOf", [Type, ctypes.c_char_p], ctypes.c_longlong),
     ("clang_Type_getSizeOf", [Type], ctypes.c_longlong),
     ("clang_Type_getCXXRefQualifier", [Type], ctypes.c_uint),
     ("clang_Type_getNamedType", [Type], Type, Type.from_result),
