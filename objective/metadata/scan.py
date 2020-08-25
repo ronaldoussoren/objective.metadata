@@ -157,7 +157,7 @@ def scan_headers(
     arch,
     link_framework,
     only_headers,
-    typemap,
+    # typemap,
     min_deploy,
     verbose=False,
 ):
@@ -212,7 +212,7 @@ def scan_headers(
         extraheaders=extraheaders,
         link_framework=link_framework,
         only_headers=only_headers,
-        typemap=typemap,
+        # typemap=typemap,
         min_deploy=min_deploy,
         verbose=verbose,
     )

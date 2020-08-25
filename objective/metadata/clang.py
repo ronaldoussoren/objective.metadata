@@ -1806,12 +1806,12 @@ class Cursor(ctypes.Structure):
         return self._enum_type
 
     @property
-    def objc_type_encoding(self):
+    def objc_type_encoding(self) -> bytes:
         """Return the Objective-C type encoding as a str."""
         if not hasattr(self, "_objc_type_encoding"):
             self._objc_type_encoding = conf.lib.clang_getDeclObjCTypeEncoding(self)
 
-        return self._objc_type_encoding
+        return self._objc_type_encoding.encode()
 
     @property
     def hash(self):
@@ -2197,25 +2197,30 @@ class Cursor(ctypes.Structure):
 
         return None if len(child_holder) == 0 else child_holder[0]
 
-    def get_property_attributes(self):
+    def get_property_attributes(
+        self,
+    ) -> typing.Optional[typing.Set[typing.Union[str, typing.Tuple[str, str]]]]:
         if self.kind != CursorKind.OBJC_PROPERTY_DECL:
             return None
 
         attr_flags = conf.lib.clang_Cursor_getObjCPropertyAttributes(self, 0)
 
-        attrs = set()
+        attrs: typing.Set[typing.Union[str, typing.Tuple[str, str]]] = set()
         for flag, attr in _attr_flag_dict.items():
             if attr_flags & flag:
                 attrs.add(attr)
 
+        typestr = self.objc_type_encoding
+        assert typestr is not None
+
         if "getter" in attrs or "setter" in attrs:
-            for string in self.objc_type_encoding.split(","):
-                if string.startswith("G"):
+            for elem in typestr.split(b","):
+                if elem.startswith(b"G"):
                     attrs.remove("getter")
-                    attrs.add(("getter", string[1:]))
-                elif string.startswith("S"):
+                    attrs.add(("getter", elem[1:].decode()))
+                elif elem.startswith(b"S"):
                     attrs.remove("setter")
-                    attrs.add(("setter", string[1:]))
+                    attrs.add(("setter", elem[1:].decode()))
 
         return attrs
 

@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import sys
+import typing
 
 import objc
 
@@ -32,6 +33,87 @@ from objective.metadata.clanghelpers import (  # isort:skip  # noqa: E402
 )
 
 
+#
+# NOTE: Use TypedDict for type annoations for now, my current plan is to
+#       change this into dataclasses with explicit serialization later on.
+#
+
+AvailabilityInfo = typing.TypedDict(
+    "AvailabilityInfo",
+    {
+        "unavailable": bool,
+        "suggestion": str,
+        "introduced": int,
+        "deprecated": int,
+        "deprecated_message": str,
+    },
+    total=False,
+)
+
+
+EnumOptions = typing.TypedDict(
+    "EnumOptions", {"value": typing.Union[int, float], "enum_type": str}, total=False
+)
+EnumTypeOptions = typing.TypedDict("EnumTypeOptions", {"typestr": bytes})
+StructOptions = typing.TypedDict(
+    "StructOptions", {"typestr": bytes, "fieldnames": typing.List[str], "special": bool}
+)
+ExternOptions = typing.TypedDict(
+    "ExternOptions",
+    {"typestr": bytes, "availability": typing.Optional[AvailabilityInfo]},
+    total=False,
+)
+ArgInfo = typing.TypedDict(
+    "ArgInfo",
+    {
+        "typestr": bytes,
+        "typestr_special": bool,
+        "null_accepted": bool,
+        "type_modifier": bytes,
+        "type_name": str,
+    },
+    total=False,
+)
+MethodInfo = typing.TypedDict(
+    "MethodInfo",
+    {
+        "selector": str,
+        "class_method": bool,
+        "args": typing.List[ArgInfo],
+        "retval": ArgInfo,
+        "visibility": str,
+        "required": bool,
+        "variadic": bool,
+        "printf_format": int,
+        "null_terminated": bool,
+        "availability": typing.Optional[AvailabilityInfo],
+    },
+    total=False,
+)
+
+PropInfo = typing.TypedDict(
+    "PropInfo",
+    {
+        "name": str,
+        "typestr": bytes,
+        "typestr_special": bool,
+        "attributes": typing.Optional[
+            typing.Set[typing.Union[str, typing.Tuple[str, str]]]
+        ],
+    },
+)
+
+ProtocolInfo = typing.TypedDict(
+    "ProtocolInfo",
+    {
+        "implements": typing.List[str],
+        "methods": typing.List[MethodInfo],
+        "properties": typing.List[PropInfo],
+        "availability": typing.Optional[AvailabilityInfo],
+    },
+)
+
+
 class FrameworkParser(object):
     """
     Parser for framework headers.
@@ -42,17 +124,16 @@ class FrameworkParser(object):
 
     def __init__(
         self,
-        framework,
-        arch="x86_64",
-        sdk="/",
-        start_header=None,
-        preheaders=(),
-        extraheaders=(),
-        link_framework=None,
-        only_headers=None,
-        typemap=None,
-        min_deploy=None,
-        verbose=False,
+        framework: str,
+        arch: str = "x86_64",
+        sdk: str = "/",
+        start_header: typing.Optional[str] = None,
+        preheaders: typing.Sequence[str] = (),
+        extraheaders: typing.Sequence[str] = (),
+        link_framework: typing.Optional[str] = None,
+        only_headers: typing.Optional[typing.Sequence[str]] = None,
+        min_deploy: typing.Optional[str] = None,
+        verbose: bool = False,
     ):
         self.verbose = verbose
         self.framework = framework
@@ -70,32 +151,31 @@ class FrameworkParser(object):
 
         self.preheaders = preheaders
         self.extraheaders = extraheaders
-        self.additional_headers = []
+        self.additional_headers: typing.List[str] = []
         self.arch = arch
         self.sdk = sdk
-        self.typemap = typemap
         self.min_deploy = min_deploy
 
-        self.headers = set()
+        self.headers: typing.Set[str] = set()
 
-        self.enum_type = {}
-        self.enum_values = {}
-        self.structs = {}
-        self.externs = {}
-        self.literals = {}
-        self.aliases = {}
-        self.expressions = {}
-        self.functions = {}
-        self.cftypes = {}
-        self.func_macros = {}
-        self.typedefs = {}
-        self.formal_protocols = {}
-        self.informal_protocols = {}
-        self.classes = {}
-        self.called_definitions = {}
-        self.macro_names = set()
+        self.enum_type: typing.Dict[str, EnumTypeOptions] = {}
+        self.enum_values: typing.Dict[str, EnumOptions] = {}
+        self.structs: typing.Dict[str, StructOptions] = {}
+        self.externs: typing.Dict[str, ExternOptions] = {}
+        self.literals: typing.Dict[str, typing.Union[int, float]] = {}
+        self.aliases: typing.Dict[str, str] = {}
+        self.expressions: typing.Dict[str, str] = {}
+        self.functions: typing.Dict = {}  # incomplete type
+        self.cftypes: typing.Dict = {}  # incomplete type
+        self.func_macros: typing.Dict = {}  # incomplete type
+        self.typedefs: typing.Dict = {}  # incomplete type
+        self.formal_protocols: typing.Dict[str, ProtocolInfo] = {}
+        self.informal_protocols: typing.Dict[str, ProtocolInfo] = {}
+        self.classes: typing.Dict = {}  # incomplete type
+        self.called_definitions: typing.Dict = {}
+        self.macro_names: typing.Set[str] = set()
 
-    def parse(self):
+    def parse(self) -> None:
 
         index = Index.create()
 
@@ -146,7 +226,7 @@ class FrameworkParser(object):
         if self.verbose:
             print("Scan complete.")
 
-    def definitions(self):
+    def definitions(self) -> dict:
         """
         Returns a dictionary with information about what was parsed and
         the definitions.
@@ -176,10 +256,10 @@ class FrameworkParser(object):
         }
 
     @property
-    def exceptions(self):
+    def exceptions(self) -> dict:
         functions = {}
         for nm, definition in self.functions.items():
-            info = {}
+            info: dict = {}  # incomplete type information
 
             # My Read: Get rid of all function specs that take ptr arguments?
             for idx, a in enumerate(definition["args"]):
@@ -206,7 +286,7 @@ class FrameworkParser(object):
             if info:
                 functions[nm] = info
 
-        prots = {}
+        prots: dict = {}  # incomplete type information
         for section in ("formal_protocols", "informal_protocols"):
             prots[section] = {}
             for prot, protdef in getattr(self, section).items():
@@ -260,7 +340,7 @@ class FrameworkParser(object):
                         del prop["typestr_special"]
                         prots[section][prot]["properties"].append(prop)
 
-        classes = {}
+        classes: dict = {}  # incomplete type information
         for clsname, clsdef in self.classes.items():
             for method in clsdef["methods"]:
                 info = {}
@@ -314,7 +394,7 @@ class FrameworkParser(object):
             }
         }
 
-    def should_process_cursor(self, cursor):
+    def should_process_cursor(self, cursor: Cursor) -> bool:
         """
         Return True iff ``node`` is an AST node that's loaded from a
         header for the current framework.
@@ -340,18 +420,22 @@ class FrameworkParser(object):
 
         return False
 
-    def add_alias(self, alias, value):
+    def add_alias(self, alias: str, value: str) -> None:
         assert isinstance(alias, str)
+        assert isinstance(value, str)
         self.aliases[alias] = value
 
-    def add_typedef(self, name, typedef):
+    def add_typedef(self, name: str, typedef: str) -> None:
+        assert isinstance(name, str)
+        assert isinstance(typedef, str)
         self.typedefs[name] = typedef
 
-    def add_enumeration(self, node):
+    def add_enumeration(self, node: Cursor) -> None:
         # Need to do something with availability information
-        name = node.spelling
-        if name is None or name == "":
+        if node.spelling is None or node.spelling == "":
             name = "<anon>"
+        else:
+            name = node.spelling
 
         value_count = 0
 
@@ -360,7 +444,9 @@ class FrameworkParser(object):
             value_count = 1
 
         elif node.kind == CursorKind.ENUM_DECL:
-            self.enum_type[node.spelling] = {"typestr": self.__get_typestr(node)[0]}
+            typestr = self.__get_typestr(node)[0]
+            assert typestr is not None
+            self.enum_type[node.spelling] = {"typestr": typestr}
             for val in filter(
                 lambda x: x.kind == CursorKind.ENUM_CONSTANT_DECL,
                 node.get_children() or [],
@@ -393,7 +479,12 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added enumeration: %s with %d values" % (name, value_count))
 
-    def add_cftype(self, name, cftype, override_typestring=None):
+    def add_cftype(
+        self,
+        name: str,
+        cftype: Cursor,
+        override_typestring: typing.Optional[bytes] = None,
+    ) -> None:
         typestr = (
             override_typestring
             if override_typestring is not None
@@ -403,11 +494,12 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added CFType: " + name)
 
-    def add_struct(self, name, struct_type):
+    def add_struct(self, name: str, struct_type: Cursor) -> None:
         assert "union" not in name, name
         typestr, special = self.__get_typestr(struct_type, exogenous_name=name)
+        assert typestr is not None
 
-        fieldnames = []
+        fieldnames: typing.List[str] = []
 
         walker = struct_type
         while walker and walker.kind == TypeKind.TYPEDEF:
@@ -437,7 +529,7 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added struct: ", name)
 
-    def add_static_const(self, name, node):
+    def add_static_const(self, name: str, node: Cursor) -> None:
         node_type = node.type
         typestr, _ = self.__get_typestr(node_type)
 
@@ -457,27 +549,22 @@ class FrameworkParser(object):
                 elif m.kind == CursorKind.FLOATING_LITERAL:
                     self.enum_values[name] = {"value": float(m.token_string)}
 
-    def add_extern(self, name, node):
+    def add_extern(self, name: str, node: Cursor) -> None:
         node_type = node.type
         typestr, special = self.__get_typestr(node_type)
+        assert typestr is not None
 
         if not special and b"?" == typestr:
             clang_typestr = node.objc_type_encoding
             if len(str(clang_typestr)) > 0:
                 typestr = clang_typestr
 
-        # assert (
-        #    name is not None
-        #    and typestr is not None
-        #    and typestr != b""
-        #    and typestr != b"?"
-        # ), "Bad params"
-        self.externs[name] = extern = {"typestr": typestr}
-        self._update_availability(extern, node)
+        self.externs[name] = extern = ExternOptions(typestr=typestr)
+        extern["availability"] = self._get_availability(node)
         if self.verbose:
-            print("Added extern: " + name + " typestr: " + typestr)
+            print(f"Added extern: {name} typestr {typestr.decode()!r}")
 
-    def add_function(self, node):
+    def add_function(self, node: Cursor) -> None:
         name = node.spelling
         if "CFBundleGetFunctionPointersForNames" in name:
             print("stop")
@@ -486,8 +573,9 @@ class FrameworkParser(object):
 
         funcspec = node.get_function_specifiers()
 
+        func: dict  # incomplete type
         self.functions[node.spelling] = func = {"retval": {"typestr": None}, "args": []}
-        self._update_availability(func, node)
+        func["availability"] = self._get_availability(node)
 
         # Does it follow the CF returns-retained pattern?
         if "Create" in name:
@@ -618,15 +706,17 @@ class FrameworkParser(object):
                 )
             print(string)
 
-    def add_protocol(self, node):
+    def add_protocol(self, node: Cursor) -> None:
+        protocol: ProtocolInfo
+
         self.formal_protocols[node.spelling] = protocol = {
             "implements": [
                 x.referenced.spelling for x in node.get_adopted_protocol_nodes()
             ],
             "methods": [],
             "properties": [],
+            "availability": self._get_availability(node),
         }
-        self._update_availability(protocol, node)
 
         for decl in node.get_children() or []:
             if (
@@ -639,15 +729,14 @@ class FrameworkParser(object):
 
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
-                this_property = {
+                assert typestr is not None
+
+                this_property: PropInfo = {
                     "name": decl.spelling,
                     "typestr": typestr,
                     "typestr_special": special,
+                    "attributes": decl.get_property_attributes(),
                 }
-                attributes = decl.get_property_attributes()
-                if attributes and len(attributes):
-                    this_property["attributes"] = attributes
-
                 protocol["properties"].append(this_property)
             else:
                 # Declaration can contain nested definitions that are picked
@@ -655,17 +744,19 @@ class FrameworkParser(object):
                 pass
 
         if self.verbose:
-            print("Added protocol: " + node.spelling)
+            print(f"Added protocol: {node.spelling}")
 
-    def add_informal_protocol(self, node):
+    def add_informal_protocol(self, node: Cursor) -> None:
+        protocol: ProtocolInfo
+
         self.informal_protocols[node.spelling] = protocol = {
             "implements": [
                 x.referenced.spelling for x in node.get_adopted_protocol_nodes()
             ],
             "methods": [],
             "properties": [],
+            "availability": self._get_availability(node),
         }
-        self._update_availability(protocol, node)
 
         for decl in node.get_children() or []:
             if (
@@ -677,15 +768,13 @@ class FrameworkParser(object):
 
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
-                this_property = {
+                assert typestr is not None
+                this_property: PropInfo = {
                     "name": decl.spelling,
                     "typestr": typestr,
                     "typestr_special": special,
+                    "attributes": decl.get_property_attributes(),
                 }
-                attributes = decl.get_property_attributes()
-                if attributes and len(attributes):
-                    this_property["attributes"] = attributes
-
                 protocol["properties"].append(this_property)
             else:
                 # Declaration can contain nested definitions that are picked
@@ -695,7 +784,7 @@ class FrameworkParser(object):
         if self.verbose:
             print("Added informal protocol: " + node.spelling)
 
-    def _update_availability(self, meta, node):
+    def _get_availability(self, node: Cursor) -> typing.Optional[AvailabilityInfo]:
         def encode_version(version):
             if version.major == -1:
                 raise ValueError("Cannot encode version {version}")
@@ -716,7 +805,9 @@ class FrameworkParser(object):
         try:
             availability = node.platform_availability
         except AttributeError:
-            return
+            return None
+
+        meta: AvailabilityInfo = {}
 
         if availability["always_unavailable"]:
             suggestion = availability["unavailable_message"]
@@ -747,6 +838,8 @@ class FrameworkParser(object):
                     platform["message"] if platform["message"] else "not available"
                 )
 
+        return meta if meta else None
+
     def add_class(self, node):
         # from .clang_tools import dump_node
         # dump_node(node)
@@ -769,8 +862,8 @@ class FrameworkParser(object):
                 "methods": [],
                 "categories": [],
                 "properties": [],
+                "availability": self._get_availability(node),
             }
-            self._update_availability(class_info, node)
 
         for proto_ref in node.get_adopted_protocol_nodes():
             proto_str = proto_ref.referenced.spelling
@@ -857,9 +950,9 @@ class FrameworkParser(object):
                         "typestr": typestr,
                         "typestr_special": special,
                         "attributes": decl.get_property_attributes(),
+                        "availability": self._get_availability(decl),
                     }
                 )
-                self._update_availability(class_info["properties"][-1], decl)
 
             else:
                 # Declaration can contain nested definitions that are picked
@@ -1302,29 +1395,44 @@ class FrameworkParser(object):
 
         return self.__extract_function_like_thing(func)
 
-    def __extract_methoddecl(self, decl):
+    def __extract_methoddecl(self, decl: Cursor) -> MethodInfo:
         """
 
         @rtype : dict
         """
+        typestr: typing.Optional[bytes]
+
         if decl.result_type.valid_type is None:
             typestr, special = objc._C_ID, False
         else:
             typestr, special = self.__get_typestr(decl.result_type.valid_type)
+            from .clang_tools import dump_type
 
-        extras = {}
+            if typestr is None:
+                dump_type(decl.result_type)
+            assert (
+                typestr is not None
+            ), f"typestr is None for {decl.result_type.spelling!r}"
+
+        retval: ArgInfo = {"typestr": typestr, "typestr_special": special}
+
         type_name = self.get_typename(decl.result_type)
         if type_name is not None:
-            extras["type_name"] = type_name
+            retval["type_name"] = type_name
 
-        meth = {
+        if decl.result_type.nullability == NullabilityKind.NONNULL:
+            retval["null_accepted"] = False
+        elif decl.result_type.nullability == NullabilityKind.NULLABLE:
+            retval["null_accepted"] = True
+
+        meth: MethodInfo = {
             "selector": decl.spelling,
             "visibility": "public",
             "class_method": bool(decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL),
-            "retval": {"typestr": typestr, "typestr_special": special, **extras},
+            "retval": retval,
             "args": [],
+            "availability": self._get_availability(decl),
         }
-        self._update_availability(meth, decl)
 
         if decl.is_variadic:
             meth["variadic"] = True
@@ -1334,22 +1442,21 @@ class FrameworkParser(object):
                 typestr, special = objc._C_ID, False
             else:
                 typestr, special = self.__get_typestr(a.type)
+                assert typestr is not None
 
-            extras = {}
+            arg: ArgInfo = {"typestr": typestr, "typestr_special": special}
+
             if a.type.nullability == NullabilityKind.NONNULL:
-                extras["null_accepted"] = False
+                arg["null_accepted"] = False
             elif a.type.nullability == NullabilityKind.NULLABLE:
-                extras["null_accepted"] = True
+                arg["null_accepted"] = True
 
             type_name = self.get_typename(decl.result_type)
             if type_name is not None:
-                extras["type_name"] = type_name
+                arg["type_name"] = type_name
 
-            meth["args"].append(
-                {"typestr": typestr, "typestr_special": special, **extras}
-            )
+            meth["args"].append(arg)
 
-        self._update_availability(meth, decl)
         return meth
 
     def __includes_string(self):
@@ -1417,7 +1524,9 @@ class FrameworkParser(object):
         else:
             return None
 
-    def __get_typestr(self, obj, exogenous_name=None):
+    def __get_typestr(
+        self, obj: Cursor, exogenous_name: typing.Optional[str] = None
+    ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
         There was a bunch of logic around "Special", but in practice,
         the only things that are special are ObjC BOOL and
@@ -1504,6 +1613,12 @@ class FrameworkParser(object):
                 typestr = "?"
                 special = False
             else:
+                canonical = clang_type.get_canonical()
+                if canonical.kind != TypeKind.UNEXPOSED:
+                    return self.__typestr_from_type(
+                        canonical, exogenous_name=exogenous_name
+                    )
+
                 typestr = None
                 special = False
 
@@ -1740,8 +1855,8 @@ class FrameworkParser(object):
 
         special = False
         typestr = node.objc_type_encoding
-        if typestr != "?" and typestr != "" and typestr is not None:
-            return typestr.encode(), special
+        if typestr != b"?" and typestr != b"" and typestr is not None:
+            return typestr, special
 
         # bail out of irrelevant cases
 
@@ -1887,13 +2002,13 @@ class DefinitionVisitor(AbstractClangVisitor):
         # headers on x86_64)
         self.__all_structs = {}
 
-    def visit(self, node):
+    def visit(self, node: Cursor):
         if not self._parser.should_process_cursor(node):
             return
 
         super(DefinitionVisitor, self).visit(node)
 
-    def visit_var_decl(self, node):
+    def visit_var_decl(self, node: Cursor):
         linkage = node.linkage
         if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUE_EXTERNAL:
             self._parser.add_extern(node.spelling, node)
@@ -1901,22 +2016,22 @@ class DefinitionVisitor(AbstractClangVisitor):
         elif linkage == LinkageKind.INTERNAL:
             self._parser.add_static_const(node.spelling, node)
 
-    def visit_enum_decl(self, node):
+    def visit_enum_decl(self, node: Cursor):
         self._parser.add_enumeration(node)
 
-    def visit_struct_decl(self, node):
+    def visit_struct_decl(self, node: Cursor):
         self.descend(node)
         assert "union" not in node.type.spelling
         self.__all_structs[getattr(node.type, "spelling", None)] = node.type
 
-    def visit_objc_protocol_decl(self, node):
+    def visit_objc_protocol_decl(self, node: Cursor):
         self.descend(node)
         self._parser.add_protocol(node)
 
-    def visit_function_decl(self, node):
+    def visit_function_decl(self, node: Cursor):
         self._parser.add_function(node)
 
-    def visit_typedef_decl(self, node):
+    def visit_typedef_decl(self, node: Cursor):
         self.descend(node)
 
         typedef_type = node.type
@@ -1960,7 +2075,7 @@ class DefinitionVisitor(AbstractClangVisitor):
                 if pointee_type_decl.spelling.startswith("__"):
                     self._parser.add_cftype(typedef_name, typedef_type)
 
-    def visit_objc_category_decl(self, node):
+    def visit_objc_category_decl(self, node: Cursor):
         self.descend(node)
 
         self._parser.add_category(node)
@@ -1968,11 +2083,11 @@ class DefinitionVisitor(AbstractClangVisitor):
         if node.get_is_informal_protocol():
             self._parser.add_informal_protocol(node)
 
-    def visit_objc_interface_decl(self, node):
+    def visit_objc_interface_decl(self, node: Cursor):
         self.descend(node)
         self._parser.add_class(node)
 
-    def visit_macro_definition(self, node):
+    def visit_macro_definition(self, node: Cursor):
         macro = node.reconstitute_macro()
         file_name = (
             "" if node.extent.start.file is None else node.extent.start.file.name

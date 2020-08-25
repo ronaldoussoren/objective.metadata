@@ -154,10 +154,10 @@ def parse_ini(ini_file, ini_sections):
         if cfg.has_option(section, "DYLD_FRAMEWORK_PATH"):
             os.environ["DYLD_FRAMEWORK_PATH"] = cfg.get(section, "DYLD_FRAMEWORK_PATH")
 
-        info["typemap"] = {}
-        if cfg.has_option(section, "typemap"):
-            for orig, new in make_pairs(cfg.get(section, "typemap").split()):
-                info["typemap"][orig] = new
+        # info["typemap"] = {}
+        # if cfg.has_option(section, "typemap"):
+        #    for orig, new in make_pairs(cfg.get(section, "typemap").split()):
+        #        info["typemap"][orig] = new
         yield info
 
 
@@ -257,7 +257,7 @@ def main():
                         arch,
                         info["link-framework"],
                         info["only-headers"],
-                        info["typemap"],
+                        # info["typemap"],
                         min_deploy,
                         verbose=args.verbose,
                     )
