@@ -1731,14 +1731,18 @@ class FrameworkParser(object):
                 typestr, special = self.__get_typestr(a.type)
                 assert typestr is not None
 
-            arg: ArgInfo = {"typestr": typestr, "typestr_special": special}
+            arg: ArgInfo = {
+                "typestr": typestr,
+                "typestr_special": special,
+                "name": a.spelling,
+            }
 
             if a.type.nullability == NullabilityKind.NONNULL:
                 arg["null_accepted"] = False
             elif a.type.nullability == NullabilityKind.NULLABLE:
                 arg["null_accepted"] = True
 
-            type_name = self.get_typename(decl.result_type)
+            type_name = self.get_typename(a.type)
             if type_name is not None:
                 arg["type_name"] = type_name
 
