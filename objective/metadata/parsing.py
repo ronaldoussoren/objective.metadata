@@ -52,15 +52,26 @@ AvailabilityInfo = typing.TypedDict(
 
 
 EnumOptions = typing.TypedDict(
-    "EnumOptions", {"value": typing.Union[int, float], "enum_type": str}, total=True
+    "EnumOptions",
+    {
+        "value": typing.Union[int, float],
+        "enum_type": str,
+        "availability": AvailabilityInfo,
+    },
 )
-EnumTypeOptions = typing.TypedDict("EnumTypeOptions", {"typestr": bytes})
+EnumTypeOptions = typing.TypedDict(
+    "EnumTypeOptions", {"typestr": bytes, "availability": AvailabilityInfo}
+)
 StructOptions = typing.TypedDict(
     "StructOptions", {"typestr": bytes, "fieldnames": typing.List[str], "special": bool}
 )
 ExternOptions = typing.TypedDict(
     "ExternOptions",
-    {"typestr": bytes, "availability": typing.Optional[AvailabilityInfo]},
+    {
+        "typestr": bytes,
+        "availability": typing.Optional[AvailabilityInfo],
+        "type_name": str,
+    },
     total=False,
 )
 ArgInfo = typing.TypedDict(
@@ -563,7 +574,10 @@ class FrameworkParser(object):
         elif node.kind == CursorKind.ENUM_DECL:
             typestr = self.__get_typestr(node)[0]
             assert typestr is not None
-            self.enum_type[node.spelling] = {"typestr": typestr}
+            self.enum_type[node.spelling] = {
+                "typestr": typestr,
+                "availability": self._get_availability(node),
+            }
             for val in filter(
                 lambda x: x.kind == CursorKind.ENUM_CONSTANT_DECL,
                 node.get_children() or [],
@@ -573,6 +587,7 @@ class FrameworkParser(object):
                 self.enum_values[val_name] = {
                     "value": val.enum_value,
                     "enum_type": node.spelling,
+                    "availability": self._get_availability(val),
                 }
 
                 # Check to see if there's also an alias inherent in this declaration
@@ -687,6 +702,9 @@ class FrameworkParser(object):
 
         extern: ExternOptions
         self.externs[name] = extern = {"typestr": typestr}
+        type_name = self.get_typename(node_type)
+        if type_name is not None:
+            extern["type_name"] = type_name
         extern["availability"] = self._get_availability(node)
         if self.verbose:
             print(f"Added extern: {name} typestr {typestr.decode()!r}")
@@ -1783,7 +1801,7 @@ class FrameworkParser(object):
                 # This needs to check if the typedef is for an interesting type:
                 # - struct
                 # - enum
-                return obj.spelling
+                return obj.spelling.lstrip("const ")
 
             # Missing: Pointer to one of the above should return the name of
             # the pointed-to type.

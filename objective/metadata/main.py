@@ -14,7 +14,7 @@ import subprocess
 import sys
 import typing
 
-from . import compile, protocols, scan
+from . import compile, docgen, protocols, scan
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
 parser.add_argument(
@@ -50,6 +50,11 @@ scan_command.add_argument(
     help="Use the given processor architecture",
     metavar="ARCH",
     default="x86_64",
+)
+
+docgen_command = subparsers.add_parser("docgen", help="Generate a Sphinx module file")
+docgen_command.add_argument(
+    "--output-dir", help="Write the file is this directory", metavar="DIR", default=None
 )
 
 compile_command = subparsers.add_parser(
@@ -151,6 +156,13 @@ def parse_ini(
 
         if cfg.has_option(section, "DYLD_FRAMEWORK_PATH"):
             os.environ["DYLD_FRAMEWORK_PATH"] = cfg.get(section, "DYLD_FRAMEWORK_PATH")
+
+        if cfg.has_option(section, "documentation-dir"):
+            info["documentation-dir"] = os.path.join(
+                ini_dir, cfg.get(section, "documentation-dir")
+            )
+        else:
+            info["documentation-dir"] = os.path.join(ini_dir, "..", "docs")
 
         # info["typemap"] = {}
         # if cfg.has_option(section, "typemap"):
@@ -272,6 +284,19 @@ def main() -> None:
         elif args.command == "protocols":
             protocols.compile_protocol_file(
                 info["protocols-file"],
+                info["exceptions"],
+                glob.glob(info["raw"] + "/*"),
+            )
+
+        elif args.command == "docgen":
+            docgen.generate_documentation(
+                os.path.join(
+                    args.output_dir
+                    if args.output_dir is not None
+                    else info["documentation-dir"],
+                    info["framework"] + ".rst",
+                ),
+                info["framework"],
                 info["exceptions"],
                 glob.glob(info["raw"] + "/*"),
             )
