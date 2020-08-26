@@ -9,6 +9,25 @@ This is rough draft, with some missing features:
     - No mechanism for convenience methods
     - No mechanism for umbrella framweorks (Quartz)
     - No references to upstream documentation
+
+Missing are:
+    - Functions
+      Should be fairly trivial given the bindings for
+      classes
+
+    - Protocols (formal and informal)
+
+    - Expressions
+    - Literals
+      These are similar to "extern" and "enum", it might
+      be better to merge those in one section.
+
+    - Aliases
+      Also similar to "extern" and "enum", but I'd prefer
+      to document what the name is an alias for.
+
+      Metadata parser needs to be updated with availability
+      information (which changes the data format).
 """
 
 import collections
@@ -58,6 +77,10 @@ def group_list_by(definitions: list, key: str):
 
 
 def available(fp, availability, *, indent=""):
+    """
+    Document availability information
+    """
+    # This uses custom directives that I haven't implemented yet.
     if not availability:
         return
 
@@ -78,6 +101,9 @@ def available(fp, availability, *, indent=""):
 
 
 def describe_argument(info, metadata):
+    # The argument description needs to be fine-tuned using actual metadata with
+    # exception information, the scan output that I'm currently using does not
+    # contain the interesting attributes.
     if info.get("printf_format"):
         if info.get("nullable"):
             return "%-style format-string or None"
@@ -98,6 +124,10 @@ def describe_argument(info, metadata):
                 typestr = typestr[1:]
 
         if typestr == objc._C_ID:
+            # The attribute is 3-valued:
+            # - True:  It is known that passing NULL for the argument is OK
+            # - False: It is known that passing NULL for the argument is not OK
+            # - None:  It isn't known if passing NULL is acceptable
             if info.get("null_accepted"):
                 description.append("None accepted")
             else:
@@ -130,6 +160,7 @@ def describe_argument(info, metadata):
             array = True
 
         if not array:
+            # See above for "null_accepted" semantics.
             if modifier == objc._C_OUT:
                 if arg.get("null_accepted"):
                     description.append(
@@ -226,6 +257,8 @@ def document_enumerations(fp, mergedinfo):
     by ``enum`` types in Python. The enum type will be exposed
     as a fake type for typing checking.
     """
+    # ObjC also has "enum.IntEnum" and "enum.IntFlag", try to
+    # collect that information and include this in the documentation.
     enum_definitions = mergedinfo["definitions"]["enum"]
     enum_types = mergedinfo["definitions"]["enum_type"]
     if enum_definitions:
@@ -243,6 +276,8 @@ def document_enumerations(fp, mergedinfo):
 
                 print(f".. class:: {enumeration}", file=fp)
                 print("", file=fp)
+                # Mention if this is IntEnum or an IntFlag, also check if
+                # some enums are open-ended.
                 print("   Placeholder type for use with typechecking.", file=fp)
                 print("", file=fp)
 
@@ -264,6 +299,10 @@ def document_externs(fp, mergedinfo):
     Note that the related types are just there for typing checking, the
     constants are not an instance of the related type.
     """
+    #
+    # A large fraction of these are "string enums" in ObjC, try to collect that
+    # information and document them as such (?).
+    #
     extern_definitions = mergedinfo["definitions"]["externs"]
 
     if extern_definitions:
@@ -299,6 +338,7 @@ def document_classes(fp, mergedinfo):
     documented before subclasses, and within classes methods are grouped by
     category and sorted by name within categories.
     """
+    #
     classinfo = mergedinfo["definitions"]["classes"]
     if classinfo:
         header(fp, "Classes", level=L2)
@@ -311,6 +351,9 @@ def document_classes(fp, mergedinfo):
             if classinfo[cls]["super"] is None:
                 # Categories on a class not defined in this framework.
                 #  NSObject and NSProxy are the root classes
+                # Note: This is not entirely correct, the if statement
+                # should only trigger for the Foundation bindings, other
+                # frameworks can define categories on NSObject.
                 if cls not in ("NSObject", "NSProxy"):
                     class_names.remove(cls)
                 extern_categories.append(cls)
@@ -328,6 +371,9 @@ def document_classes(fp, mergedinfo):
             if info["super"] is None:
                 print("   Subclass of :class:`objc.objc_object`.", file=fp)
             else:
+                # Possible problem: The superclass can be in a different
+                # framework, I haven't decided yet how to get the correct
+                # reference here.
                 print(f"   Subclass of :class:`{info['super']}`.", file=fp)
             print("", file=fp)
             available(fp, info.get("availability"), indent="   ")
@@ -356,6 +402,9 @@ def document_classes(fp, mergedinfo):
 
         if extern_categories:
             header(fp, "Categories on classes from other frameworks", level=L2)
+
+            # Implementation is missing!  I'm waiting until the documentation
+            # for regular classes is done.
 
             for cls in extern_categories:
                 print(cls, file=fp)
