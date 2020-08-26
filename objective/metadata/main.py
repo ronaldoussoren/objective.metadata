@@ -14,7 +14,7 @@ import subprocess
 import sys
 import typing
 
-from . import compile, merge_xml, protocols, scan
+from . import compile, protocols, scan
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
 parser.add_argument(
@@ -50,13 +50,6 @@ scan_command.add_argument(
     help="Use the given processor architecture",
     metavar="ARCH",
     default="x86_64",
-)
-
-import_command = subparsers.add_parser(
-    "import", help="Import data from a bridgesupport file"
-)
-import_command.add_argument(
-    "--bridgesupport-file", metavar="FILE", help="Use this bridgesupport file"
 )
 
 compile_command = subparsers.add_parser(
@@ -265,14 +258,6 @@ def main() -> None:
                         min_deploy,
                         verbose=args.verbose,
                     )
-
-        elif args.command == "import":
-            if args.verbose:
-                print(
-                    "Import framework=%r bridgesupport=%r"
-                    % (info["framework"], args.bridgesupport_file)
-                )
-            merge_xml.merge_xml(info["exceptions"], args.bridgesupport_file)
 
         elif args.command == "compile":
             if args.verbose:
