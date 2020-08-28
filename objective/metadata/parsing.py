@@ -56,14 +56,16 @@ EnumOptions = typing.TypedDict(
     {
         "value": typing.Union[int, float],
         "enum_type": str,
-        "availability": AvailabilityInfo,
+        "availability": typing.Optional[AvailabilityInfo],
     },
 )
 EnumTypeOptions = typing.TypedDict(
-    "EnumTypeOptions", {"typestr": bytes, "availability": AvailabilityInfo}
+    "EnumTypeOptions",
+    {"typestr": bytes, "availability": typing.Optional[AvailabilityInfo]},
 )
 StructOptions = typing.TypedDict(
-    "StructOptions", {"typestr": bytes, "fieldnames": typing.List[str], "special": bool}
+    "StructOptions",
+    {"typestr": bytes, "fieldnames": typing.List[str], "typestr_special": bool},
 )
 ExternOptions = typing.TypedDict(
     "ExternOptions",
@@ -197,9 +199,9 @@ PropInfo = typing.TypedDict(
         "name": str,
         "typestr": bytes,
         "typestr_special": bool,
-        "attributes": typing.Optional[
-            typing.Set[typing.Union[str, typing.Tuple[str, str]]]
-        ],
+        "getter": typing.Optional[str],
+        "setter": typing.Optional[str],
+        "attributes": typing.Set[str],
         "availability": typing.Optional[AvailabilityInfo],
         "category": typing.Optional[str],
     },
@@ -218,7 +220,6 @@ ProtocolInfo = typing.TypedDict(
 ClassInfo = typing.TypedDict(
     "ClassInfo",
     {
-        "name": str,
         "super": typing.Optional[str],
         "protocols": typing.Set[str],
         "methods": typing.List[MethodInfo],
@@ -238,6 +239,26 @@ LiteralInfo = typing.TypedDict(
     "LiteralInfo",
     {"value": typing.Union[None, int, float, str], "unicode": bool},
     total=False,
+)
+
+AliasInfo = typing.TypedDict(
+    "AliasInfo",
+    {
+        "alias": str,
+        "enum_type": typing.Optional[str],
+        "availability": typing.Optional[AvailabilityInfo],
+    },
+    total=False,
+)
+
+ExpressionInfo = typing.TypedDict(
+    "ExpressionInfo",
+    {"expression": str, "availability": typing.Optional[AvailabilityInfo]},
+)
+
+FunctionMacroInfo = typing.TypedDict(
+    "FunctionMacroInfo",
+    {"definition": str, "availability": typing.Optional[AvailabilityInfo]},
 )
 
 
@@ -290,16 +311,15 @@ class FrameworkParser(object):
         self.structs: typing.Dict[str, StructOptions] = {}
         self.externs: typing.Dict[str, ExternOptions] = {}
         self.literals: typing.Dict[str, LiteralInfo] = {}
-        self.aliases: typing.Dict[str, str] = {}
-        self.expressions: typing.Dict[str, str] = {}
+        self.aliases: typing.Dict[str, AliasInfo] = {}
+        self.expressions: typing.Dict[str, ExpressionInfo] = {}
         self.functions: typing.Dict[str, FunctionInfo] = {}  # incomplete type
         self.cftypes: typing.Dict[str, CFTypeInfo] = {}
-        self.func_macros: typing.Dict = {}  # incomplete type
+        self.func_macros: typing.Dict[str, FunctionMacroInfo] = {}
         self.typedefs: typing.Dict = {}  # incomplete type
         self.formal_protocols: typing.Dict[str, ProtocolInfo] = {}
         self.informal_protocols: typing.Dict[str, ProtocolInfo] = {}
         self.classes: typing.Dict[str, ClassInfo] = {}
-        self.called_definitions: typing.Dict = {}
         self.macro_names: typing.Set[str] = set()
 
     def parse(self) -> None:
@@ -378,7 +398,6 @@ class FrameworkParser(object):
                 "formal_protocols": self.formal_protocols,
                 "informal_protocols": self.informal_protocols,
                 "classes": self.classes,
-                "called_definitions": self.called_definitions,
             },
         }
 
@@ -551,7 +570,8 @@ class FrameworkParser(object):
     def add_alias(self, alias: str, value: str) -> None:
         assert isinstance(alias, str)
         assert isinstance(value, str)
-        self.aliases[alias] = value
+        # Not adding availability is suboptimal...
+        self.aliases[alias] = {"alias": value, "availability": None}
 
     def add_typedef(self, name: str, typedef: str) -> None:
         assert isinstance(name, str)
@@ -602,7 +622,13 @@ class FrameworkParser(object):
                     ):
                         other_name = referenced_decl.spelling
                         if len(other_name or ""):
-                            self.aliases[val_name] = other_name
+                            alias: AliasInfo = {
+                                "alias": other_name,
+                                "enum_type": node.spelling,
+                                "availability": self._get_availability(val),
+                            }
+
+                            self.aliases[val_name] = alias
                 elif len(children) > 1:
                     debug_break()
 
@@ -656,7 +682,7 @@ class FrameworkParser(object):
         self.structs[name] = {
             "typestr": typestr,
             "fieldnames": fieldnames,
-            "special": special,
+            "typestr_special": special,
         }
 
         if self.verbose:
@@ -878,11 +904,25 @@ class FrameworkParser(object):
                 typestr, special = self.__get_typestr(decl.type)
                 assert typestr is not None
 
+                prop_attr = decl.get_property_attributes()
+                getter = setter = None
+                attributes = set()
+                for item in prop_attr or ():
+                    if isinstance(item, str):
+                        attributes.add(item)
+                    elif item[0] == "getter":
+                        getter = item[1]
+                    elif item[0] == "setter":
+                        setter = item[1]
+                    else:
+                        raise RuntimeError(f"Unexpected Attribute {attributes}")
                 this_property: PropInfo = {
                     "name": decl.spelling,
                     "typestr": typestr,
                     "typestr_special": special,
-                    "attributes": decl.get_property_attributes(),
+                    "getter": getter,
+                    "setter": setter,
+                    "attributes": attributes,
                     "availability": self._get_availability(node),
                     "category": None,
                 }
@@ -918,11 +958,25 @@ class FrameworkParser(object):
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
                 assert typestr is not None
+                prop_attr = decl.get_property_attributes()
+                getter = setter = None
+                attributes = set()
+                for item in prop_attr or ():
+                    if isinstance(item, str):
+                        attributes.add(item)
+                    elif item[0] == "getter":
+                        getter = item[1]
+                    elif item[0] == "setter":
+                        setter = item[1]
+                    else:
+                        raise RuntimeError(f"Unexpected Attribute {attributes}")
                 this_property: PropInfo = {
                     "name": decl.spelling,
                     "typestr": typestr,
                     "typestr_special": special,
-                    "attributes": decl.get_property_attributes(),
+                    "getter": getter,
+                    "setter": setter,
+                    "attributes": attributes,
                     "availability": self._get_availability(node),
                     "category": None,
                 }
@@ -1006,7 +1060,6 @@ class FrameworkParser(object):
                 superclass_name = superclass.spelling
 
             self.classes[node.spelling] = class_info = {
-                "name": node.spelling,
                 "super": superclass_name,
                 "protocols": set(),
                 "methods": [],
@@ -1034,13 +1087,28 @@ class FrameworkParser(object):
                 typestr, special = self.__get_typestr(decl.type)
                 assert typestr is not None
 
+                prop_attr = decl.get_property_attributes()
+                getter = setter = None
+                attributes = set()
+                for item in prop_attr or ():
+                    if isinstance(item, str):
+                        attributes.add(item)
+                    elif item[0] == "getter":
+                        getter = item[1]
+                    elif item[0] == "setter":
+                        setter = item[1]
+                    else:
+                        raise RuntimeError(f"Unexpected Attribute {attributes}")
+
                 class_info["properties"].append(
                     {
                         "name": decl.spelling,
                         "typestr": typestr,
                         "typestr_special": special,
                         "category": None,
-                        "attributes": decl.get_property_attributes(),
+                        "getter": getter,
+                        "setter": setter,
+                        "attributes": attributes,
                         "availability": self._get_availability(node),
                     }
                 )
@@ -1076,7 +1144,6 @@ class FrameworkParser(object):
             class_info = self.classes[class_name]
         else:
             self.classes[class_name] = class_info = {
-                "name": class_name,
                 "categories": [],
                 "methods": [],
                 "protocols": set(),
@@ -1103,12 +1170,28 @@ class FrameworkParser(object):
             elif decl.kind == CursorKind.OBJC_PROPERTY_DECL:
                 typestr, special = self.__get_typestr(decl.type)
                 assert typestr is not None
+
+                prop_attr = decl.get_property_attributes()
+                getter = setter = None
+                attributes = set()
+                for item in prop_attr or ():
+                    if isinstance(item, str):
+                        attributes.add(item)
+                    elif item[0] == "getter":
+                        getter = item[1]
+                    elif item[0] == "setter":
+                        setter = item[1]
+                    else:
+                        raise RuntimeError(f"Unexpected Attribute {attributes}")
+
                 class_info["properties"].append(
                     {
                         "name": decl.spelling,
                         "typestr": typestr,
                         "typestr_special": special,
-                        "attributes": decl.get_property_attributes(),
+                        "getter": getter,
+                        "setter": setter,
+                        "attributes": attributes,
                         "category": category_name,
                         "availability": self._get_availability(decl),
                     }
@@ -1255,7 +1338,7 @@ class FrameworkParser(object):
 
                     value = m.group(1)
                     if value not in ("extern", "static", "inline", "float"):
-                        self.aliases[key] = m.group(1)
+                        self.aliases[key] = {"alias": m.group(1), "availability": None}
                         if self.verbose:
                             print(
                                 "Added alias name: "
@@ -1300,13 +1383,16 @@ class FrameworkParser(object):
                 if value.startswith("CFUUIDGetConstantUUIDWithBytes("):
                     # Constant CFUUID definitions, used in a number of
                     # frameworks
-                    self.called_definitions[key] = value.replace("NULL", "None")
+                    self.expressions[key] = {
+                        "expression": value.replace("NULL", "None"),
+                        "availability": None,
+                    }
                     if self.verbose:
                         print(
-                            "Added called_definitions name: "
+                            "Added expression name: "
                             + key
                             + " value: "
-                            + str(self.called_definitions[key])
+                            + str(self.expressions[key])
                         )
                     continue
 
@@ -1366,7 +1452,7 @@ class FrameworkParser(object):
 
                 m = OR_EXPR_RE.match(value)
                 if m is not None:
-                    self.expressions[key] = value
+                    self.expressions[key] = {"expression": value, "availability": None}
                     if self.verbose:
                         print(
                             "Added expressions name: "
@@ -1378,7 +1464,7 @@ class FrameworkParser(object):
 
                 m = CALL_VALUE.match(value)
                 if m is not None:
-                    self.expressions[key] = value
+                    self.expressions[key] = {"expression": value, "availability": None}
                     if self.verbose:
                         print(
                             "Added expressions name: "
@@ -1408,13 +1494,16 @@ class FrameworkParser(object):
 
                 else:
                     key = proto.split("(")[0]
-                    self.func_macros[key] = funcdef
+                    self.func_macros[key] = {
+                        "definition": funcdef,
+                        "availability": None,
+                    }
                     if self.verbose:
                         print(
                             "Added func_macros name: "
                             + key
                             + " value: "
-                            + self.func_macros[key]
+                            + self.func_macros[key]["definition"]
                         )
 
     @staticmethod
@@ -1714,7 +1803,6 @@ class FrameworkParser(object):
 
         meth: MethodInfo = {
             "selector": decl.spelling,
-            "visibility": "public",
             "class_method": bool(decl.kind == CursorKind.OBJC_CLASS_METHOD_DECL),
             "retval": retval,
             "args": [],
