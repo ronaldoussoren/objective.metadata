@@ -10,7 +10,7 @@ setup(
         Objective-C header files that cannot be extracted from the
         Objective-C runtime.
     """,
-    install_requires=["pyobjc-core", "macholib>=1.4.3"],
+    install_requires=["pyobjc-core", "macholib>=1.4.3", "dataclasses-json"],
     license="MIT",
     version="0.1",
     author="Ronald Oussoren",
