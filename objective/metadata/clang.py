@@ -326,9 +326,15 @@ class SourceRange(ctypes.Structure):
         start_file_name = self.start.file.name
         end_file_name = self.end.file.name
         if start_file_name == end_file_name and os.path.exists(start_file_name):
-            with open(start_file_name) as fp:
-                fp.seek(self.start.offset)
-                contents = fp.read(self.end.offset - self.start.offset)
+            try:
+                with open(start_file_name) as fp:
+                    fp.seek(self.start.offset)
+                    contents = fp.read(self.end.offset - self.start.offset)
+            except UnicodeDecodeError:
+                # Sigh... some headers contain text that isn't UTF-8
+                with open(start_file_name, encoding="latin1") as fp:
+                    fp.seek(self.start.offset)
+                    contents = fp.read(self.end.offset - self.start.offset)
 
         return contents
 
@@ -1262,6 +1268,23 @@ class CursorKind(enum.IntEnum):
 
     DLLEXPORT_ATTR = 418
     DLLIMPORT_ATTR = 419
+    NSRETURNSRETAINED_ATTR = 420
+    NSRETURNSNOTRETAINED_ATTR = 421
+    NSRETURNSAUTORELEASED_ATTR = 422
+    NSCONSUMESSELF_ATTR = 423
+    NSCONSUMED_ATTR = 424
+    OBJCEXCEPTION_ATTR = 425
+    OBJCNSOBJECT_ATTR = 426
+    OBJCINDEPENDENTCLASS_ATTR = 427
+    OBJCPRESISELIVETIME_ATTR = 428
+    OBJCRETURNSINNERPOINTER_ATTR = 429
+    REQUIRESSUPER_ATTR = 430
+    OBJCROOTCLASS_ATTR = 431
+    OBJCSUBCLASSINGRESTRICTED_ATTR = 432
+    EXPLICITPROTOCOLIMPL_ATTR = 433
+    OBJCDESIGNATEDINITIALIZER_ATTR = 434
+    OBJCBOXABLE_ATTR = 436
+    FLAGENUM_ATTR = 437
     CONVERGENT_ATTR = 438
     WARN_UNUSED_ATTR = 439
     WARN_UNUSED_RESULT_ATTR = 440
@@ -1286,14 +1309,6 @@ class CursorKind(enum.IntEnum):
 
     # A code completion overload candidate.
     OVERLOAD_CANDIDATE = 700
-
-    NSRETURNSRETAINED_ATTR = 420
-    OBJCRETURNSINNERPOINTER_ATTR = 429
-    REQUIRESSUPER_ATTR = 430
-    EXPLICITPROTOCOLIMPL_ATTR = 433
-    OBJCDESIGNATEDINITIALIZER_ATTR = 434
-    OBJCBOXABLE_ATTR = 436
-    FLAGENUM_ATTR = 437
 
 
 # Template Argument Kinds
@@ -1541,6 +1556,9 @@ class Cursor(ctypes.Structure):
         cursor._tu = tu
 
         return cursor
+
+    def __hash__(self):
+        return hash((self._kind_id, self.xdata, tuple(self.data)))
 
     def __eq__(self, other):
         return conf.lib.clang_equalCursors(self, other)
@@ -2704,6 +2722,9 @@ class Type(ctypes.Structure):
     """
 
     _fields_ = [("_kind_id", ctypes.c_int), ("data", ctypes.c_void_p * 2)]
+
+    def __hash__(self):
+        return hash((self._kind_id, tuple(self.data)))
 
     @property
     def kind(self):

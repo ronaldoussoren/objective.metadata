@@ -262,6 +262,10 @@ FunctionMacroInfo = typing.TypedDict(
 )
 
 
+class SelfReferentialTypeError(Exception):
+    pass
+
+
 class FrameworkParser(object):
     """
     Parser for framework headers.
@@ -670,7 +674,7 @@ class FrameworkParser(object):
 
         type_decl = walker.declaration
         if type_decl is not None:
-            for field_decl in type_decl.get_struct_field_decls():
+            for field_decl in type_decl.get_struct_field_decls() or ():
                 fieldnames.append(field_decl.spelling)
                 ts, _ = self.__get_typestr(field_decl.type)
                 assert ts
@@ -1575,6 +1579,13 @@ class FrameworkParser(object):
 
         @rtype : dict
         """
+        if isinstance(thing, Type):
+            print("Attributed")
+            if thing.kind == TypeKind.ATTRIBUTED:
+                thing = thing.modified_type
+            if thing.kind == TypeKind.TYPEDEF:
+                thing = thing.declaration.underlying_typedef_type.get_pointee()
+        print("K", thing.kind)
         return_type = thing.get_result()
         assert return_type.kind != TypeKind.INVALID
 
@@ -1740,6 +1751,7 @@ class FrameworkParser(object):
         """
         if isinstance(func, Cursor):
             func = func.type
+        orig_func = func
 
         assert isinstance(func, Type), "huh"
 
@@ -1756,7 +1768,13 @@ class FrameworkParser(object):
         while func.kind == TypeKind.POINTER:
             func = func.get_pointee()
 
-        return self.__extract_function_like_thing(func)
+        try:
+            return self.__extract_function_like_thing(func)
+        except AssertionError:
+            from .clang_tools import dump_type
+
+            dump_type(orig_func)
+            raise
 
     def __extract_methoddecl(self, decl: Cursor) -> MethodInfo:
         """
@@ -1940,7 +1958,11 @@ class FrameworkParser(object):
 
     # noinspection PyProtectedMember
     def __typestr_from_type(
-        self, clang_type: Type, exogenous_name: typing.Optional[str] = None
+        self,
+        clang_type: Type,
+        exogenous_name: typing.Optional[str] = None,
+        is_pointee=False,
+        seen: typing.Optional[typing.Set[typing.Any]] = None,
     ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
 
@@ -1952,236 +1974,267 @@ class FrameworkParser(object):
         @rtype : ( str, bool )
         """
         assert isinstance(clang_type, Type)
+        if seen is None:
+            seen = set()
 
-        typestr: typing.Optional[bytes] = None
-        special: bool = False
-        assert clang_type is not None, "bad type"
+        if clang_type in seen:
+            raise SelfReferentialTypeError("Nested type")
 
-        # Check for built in types
-        primitive_objc_type_for_arch = clang_type.kind.objc_type_for_arch(self.arch)
-        if primitive_objc_type_for_arch:  # should handle all builtins
-            typestr = primitive_objc_type_for_arch
-            special = False  # used to be "typestr in self._special" - That seems wrong
+        seen.add(clang_type)
+        try:
+            typestr: typing.Optional[bytes] = None
+            special: bool = False
+            assert clang_type is not None, "bad type"
 
-        # OK, it's not a built-in type
-
-        # CXType_Invalid = 0,
-        elif clang_type.kind == TypeKind.INVALID:
-            pass  # no typestr for this
-
-        # CXType_Unexposed = 1,
-        elif clang_type.kind == TypeKind.UNEXPOSED:
-            # Opaque struct?
-            typedecl = clang_type.get_declaration()
-            if typedecl.kind != CursorKind.NO_DECL_FOUND:
-                typestr, special = self.__typestr_from_node(
-                    typedecl, exogenous_name=exogenous_name
+            # Check for built in types
+            primitive_objc_type_for_arch = clang_type.kind.objc_type_for_arch(self.arch)
+            if primitive_objc_type_for_arch:  # should handle all builtins
+                typestr = primitive_objc_type_for_arch
+                special = (
+                    False  # used to be "typestr in self._special" - That seems wrong
                 )
-            elif clang_type.looks_like_function:
-                typestr = b"?"
-                special = False
-            else:
-                canonical = clang_type.get_canonical()
-                if canonical.kind != TypeKind.UNEXPOSED:
-                    return self.__typestr_from_type(
-                        canonical, exogenous_name=exogenous_name
+
+            # OK, it's not a built-in type
+
+            # CXType_Invalid = 0,
+            elif clang_type.kind == TypeKind.INVALID:
+                pass  # no typestr for this
+
+            # CXType_Unexposed = 1,
+            elif clang_type.kind == TypeKind.UNEXPOSED:
+                # Opaque struct?
+                typedecl = clang_type.get_declaration()
+                if typedecl.kind != CursorKind.NO_DECL_FOUND:
+                    typestr, special = self.__typestr_from_node(
+                        typedecl,
+                        exogenous_name=exogenous_name,
+                        seen=seen,
+                        is_pointee=is_pointee,
                     )
+                elif clang_type.looks_like_function:
+                    typestr = b"?"
+                    special = False
+                else:
+                    canonical = clang_type.get_canonical()
+                    if canonical.kind != TypeKind.UNEXPOSED:
+                        return self.__typestr_from_type(
+                            canonical,
+                            exogenous_name=exogenous_name,
+                            seen=seen,
+                            is_pointee=is_pointee,
+                        )
 
-                typestr = None
-                special = False
+                    typestr = None
+                    special = False
 
-        # CXType_Complex = 100,
-        elif clang_type.kind == TypeKind.COMPLEX:
-            raise UnsuportedClangOptionError(clang_type.kind)
+            # CXType_Complex = 100,
+            elif clang_type.kind == TypeKind.COMPLEX:
+                raise UnsuportedClangOptionError(clang_type.kind)
 
-        # CXType_Pointer = 101,
-        elif clang_type.kind == TypeKind.POINTER:
-            pointee = clang_type.get_pointee()
-            t, special = self.__typestr_from_type(
-                pointee, exogenous_name=exogenous_name
-            )
-            typestr = objc._C_PTR + (t if t is not None else b"")
+            # CXType_Pointer = 101,
+            elif clang_type.kind == TypeKind.POINTER:
+                pointee = clang_type.get_pointee()
+                t, special = self.__typestr_from_type(
+                    pointee, exogenous_name=exogenous_name, seen=seen, is_pointee=True
+                )
+                typestr = objc._C_PTR + (t if t is not None else b"")
 
-        # CXType_BlockPointer = 102,
-        elif clang_type.kind == TypeKind.BLOCKPOINTER:
-            typestr = objc._C_ID + objc._C_UNDEF
+            # CXType_BlockPointer = 102,
+            elif clang_type.kind == TypeKind.BLOCKPOINTER:
+                typestr = objc._C_ID + objc._C_UNDEF
 
-        # CXType_LValueReference = 103,
-        elif clang_type.kind == TypeKind.LVALUEREFERENCE:
-            raise UnsuportedClangOptionError(clang_type.kind)
+            # CXType_LValueReference = 103,
+            elif clang_type.kind == TypeKind.LVALUEREFERENCE:
+                raise UnsuportedClangOptionError(clang_type.kind)
 
-        # CXType_RValueReference = 104,
-        elif clang_type.kind == TypeKind.RVALUEREFERENCE:
-            raise UnsuportedClangOptionError(clang_type.kind)
+            # CXType_RValueReference = 104,
+            elif clang_type.kind == TypeKind.RVALUEREFERENCE:
+                raise UnsuportedClangOptionError(clang_type.kind)
 
-        # CXType_Record = 105,
-        elif clang_type.kind == TypeKind.RECORD:
-            typedecl = clang_type.get_declaration()
-            assert (
-                CursorKind.NO_DECL_FOUND != typedecl.kind
-            ), "Couldn't find declaration for non-primitive type"
-            exogenous_name = (
-                exogenous_name
-                if exogenous_name
-                else getattr(typedecl.type, "spelling", None)
-            )
-            if "union" in exogenous_name:
-                # Nested anonymous unions cause problems.
-                exogenous_name = None
+            # CXType_Record = 105,
+            elif clang_type.kind == TypeKind.RECORD:
+                typedecl = clang_type.get_declaration()
+                assert (
+                    CursorKind.NO_DECL_FOUND != typedecl.kind
+                ), "Couldn't find declaration for non-primitive type"
+                exogenous_name = (
+                    exogenous_name
+                    if exogenous_name
+                    else getattr(typedecl.type, "spelling", None)
+                )
+                if "union" in exogenous_name:
+                    # Nested anonymous unions cause problems.
+                    exogenous_name = None
 
-            typestr, special = self.__typestr_from_node(
-                typedecl, exogenous_name=exogenous_name
-            )
+                typestr, special = self.__typestr_from_node(
+                    typedecl,
+                    exogenous_name=exogenous_name,
+                    seen=seen,
+                    is_pointee=is_pointee,
+                )
 
-        # CXType_Enum = 106,
-        elif clang_type.kind == TypeKind.ENUM:
-            typedecl = clang_type.get_declaration()
-            assert (
-                CursorKind.NO_DECL_FOUND != typedecl.kind
-            ), "Couldn't find declaration for non-primitive type"
-            typestr, special = self.__typestr_from_node(
-                typedecl, exogenous_name=exogenous_name
-            )
+            # CXType_Enum = 106,
+            elif clang_type.kind == TypeKind.ENUM:
+                typedecl = clang_type.get_declaration()
+                assert (
+                    CursorKind.NO_DECL_FOUND != typedecl.kind
+                ), "Couldn't find declaration for non-primitive type"
+                typestr, special = self.__typestr_from_node(
+                    typedecl, exogenous_name=exogenous_name, seen=seen
+                )
 
-        # CXType_Typedef = 107,
-        elif clang_type.kind == TypeKind.TYPEDEF:
-            canonical_type = clang_type.get_canonical()
+            # CXType_Typedef = 107,
+            elif clang_type.kind == TypeKind.TYPEDEF:
+                canonical_type = clang_type.get_canonical()
 
-            if clang_type.ever_defines_to("BOOL"):
-                # Give a hint to look into it if things don't add up
-                assert canonical_type.kind == TypeKind.SCHAR
-                typestr = objc._C_NSBOOL
-                special = True
-            elif clang_type.ever_defines_to("Boolean"):
-                # Give a hint to look into it if things don't add up
-                assert canonical_type.kind == TypeKind.UCHAR
-                typestr = objc._C_NSBOOL
-                special = True
+                if clang_type.ever_defines_to("BOOL"):
+                    # Give a hint to look into it if things don't add up
+                    assert canonical_type.kind == TypeKind.SCHAR
+                    typestr = objc._C_NSBOOL
+                    special = True
+                elif clang_type.ever_defines_to("Boolean"):
+                    # Give a hint to look into it if things don't add up
+                    assert canonical_type.kind == TypeKind.UCHAR
+                    typestr = objc._C_NSBOOL
+                    special = True
 
-            elif clang_type.ever_defines_to("CFTypeRef"):
+                elif clang_type.ever_defines_to("CFTypeRef"):
+                    typestr = objc._C_ID
+
+                elif clang_type.ever_defines_to("UniChar"):
+                    typestr = objc._C_UNICHAR
+
+                else:
+                    # In an ideal world, we would go right to canonical
+                    # here, but we can't because we treat some typedefs
+                    # like BOOL and Boolean and UniChar specially.
+                    next_type = clang_type.next_typedefed_type
+                    if not exogenous_name:
+                        if clang_type.declaration is not None:
+                            exogenous_name = clang_type.declaration.spelling
+                    if next_type:
+                        typestr, special = self.__typestr_from_type(
+                            next_type,
+                            exogenous_name=exogenous_name,
+                            seen=seen,
+                            is_pointee=is_pointee,
+                        )
+                    else:
+                        typestr, special = self.__typestr_from_type(
+                            canonical_type,
+                            exogenous_name=exogenous_name,
+                            seen=seen,
+                            is_pointee=is_pointee,
+                        )
+
+                    assert typestr is not None
+
+                    if typestr == b"^?" and clang_type.looks_like_function:
+                        # Maybe we can do better in the future?
+                        pass
+
+                    if b"{" in typestr:
+                        # hopefully checking the string is cheaper
+                        # than fetching the declaration
+                        canonical_type_decl = canonical_type.declaration
+                        # anonymous struct... we treat these as "special" for some reason
+                        if (
+                            canonical_type_decl
+                            and canonical_type_decl.kind == CursorKind.STRUCT_DECL
+                            and canonical_type_decl.spelling == ""
+                        ):
+                            special = True
+
+            # CXType_ObjCInterface = 108,
+            elif clang_type.kind == TypeKind.OBJCINTERFACE:
+                pass  # no typestr for this
+
+            # CXType_ObjCObjectPointer = 109,
+            elif clang_type.kind == TypeKind.OBJCOBJECTPOINTER:
                 typestr = objc._C_ID
 
-            elif clang_type.ever_defines_to("UniChar"):
-                typestr = objc._C_UNICHAR
+            # CXType_FunctionNoProto = 110,
+            elif clang_type.kind == TypeKind.FUNCTIONNOPROTO:
+                typestr = b""
 
-            else:
-                # In an ideal world, we would go right to canonical
-                # here, but we can't because we treat some typedefs
-                # like BOOL and Boolean and UniChar specially.
-                next_type = clang_type.next_typedefed_type
-                if not exogenous_name:
-                    if clang_type.declaration is not None:
-                        exogenous_name = clang_type.declaration.spelling
-                if next_type:
-                    typestr, special = self.__typestr_from_type(
-                        next_type, exogenous_name=exogenous_name
-                    )
+            # CXType_FunctionProto = 111,
+            elif clang_type.kind == TypeKind.FUNCTIONPROTO:
+                typestr = objc._C_UNDEF
+
+            # CXType_ConstantArray = 112,
+            elif clang_type.kind in [
+                TypeKind.CONSTANTARRAY,
+                TypeKind.INCOMPLETEARRAY,
+                TypeKind.VECTOR,
+            ]:
+                result = []
+                result.append(objc._C_ARY_B)
+                dim = clang_type.element_count
+                if dim is None or int(dim) is None or int(dim) == 0:
+                    t = b""
+                    s = False
+                    element_type = clang_type.element_type
+                    if element_type:
+                        t, s = self.__typestr_from_type(
+                            element_type, exogenous_name=exogenous_name
+                        )
+                        assert t is not None
+                    return objc._C_PTR + t, s
                 else:
-                    typestr, special = self.__typestr_from_type(
-                        canonical_type, exogenous_name=exogenous_name
-                    )
+                    result.append(b"%d" % (dim,))
 
-                assert typestr is not None
-
-                if typestr == b"^?" and clang_type.looks_like_function:
-                    # Maybe we can do better in the future?
-                    pass
-
-                if b"{" in typestr:
-                    # hopefully checking the string is cheaper
-                    # than fetching the declaration
-                    canonical_type_decl = canonical_type.declaration
-                    # anonymous struct... we treat these as "special" for some reason
-                    if (
-                        canonical_type_decl
-                        and canonical_type_decl.kind == CursorKind.STRUCT_DECL
-                        and canonical_type_decl.spelling == ""
-                    ):
-                        special = True
-
-        # CXType_ObjCInterface = 108,
-        elif clang_type.kind == TypeKind.OBJCINTERFACE:
-            pass  # no typestr for this
-
-        # CXType_ObjCObjectPointer = 109,
-        elif clang_type.kind == TypeKind.OBJCOBJECTPOINTER:
-            typestr = objc._C_ID
-
-        # CXType_FunctionNoProto = 110,
-        elif clang_type.kind == TypeKind.FUNCTIONNOPROTO:
-            typestr = b""
-
-        # CXType_FunctionProto = 111,
-        elif clang_type.kind == TypeKind.FUNCTIONPROTO:
-            typestr = objc._C_UNDEF
-
-        # CXType_ConstantArray = 112,
-        elif clang_type.kind in [
-            TypeKind.CONSTANTARRAY,
-            TypeKind.INCOMPLETEARRAY,
-            TypeKind.VECTOR,
-        ]:
-            result = []
-            result.append(objc._C_ARY_B)
-            dim = clang_type.element_count
-            if dim is None or int(dim) is None or int(dim) == 0:
-                t = b""
-                s = False
                 element_type = clang_type.element_type
-                if element_type:
-                    t, s = self.__typestr_from_type(
-                        element_type, exogenous_name=exogenous_name
-                    )
-                    assert t is not None
-                return objc._C_PTR + t, s
+                t, s = self.__typestr_from_type(
+                    element_type, exogenous_name=exogenous_name, seen=seen
+                )
+                assert t is not None
+                result.append(t)
+                if s:
+                    special = True
+
+                result.append(objc._C_ARY_E)
+                typestr = b"".join(result)
+
+            # CXType_Vector = 113,
+            elif clang_type.kind == TypeKind.VECTOR:
+                pass  # handled with CONSTANTARRAY above
+
+            # CXType_IncompleteArray = 114,
+            elif clang_type.kind == TypeKind.INCOMPLETEARRAY:
+                pass  # handled with CONSTANTARRAY above
+
+            # CXType_VariableArray = 115,
+            elif clang_type.kind == TypeKind.VARIABLEARRAY:
+                raise UnsuportedClangOptionError(clang_type.kind)
+
+            # CXType_DependentSizedArray = 116,
+            elif clang_type.kind == TypeKind.DEPENDENTSIZEDARRAY:
+                raise UnsuportedClangOptionError(clang_type.kind)
+
+            # CXType_MemberPointer = 117,
+            elif clang_type.kind == TypeKind.MEMBERPOINTER:
+                raise UnsuportedClangOptionError(clang_type.kind)
+
+            elif clang_type.kind == TypeKind.ATTRIBUTED:
+                return self.__typestr_from_type(
+                    clang_type.modified_type, exogenous_name, seen=seen
+                )
+
             else:
-                result.append(b"%d" % (dim,))
+                typedecl = clang_type.get_declaration()
+                if typedecl.kind == CursorKind.NO_DECL_FOUND:
+                    return b"?", True
+                assert (
+                    CursorKind.NO_DECL_FOUND != typedecl.kind
+                ), "Couldn't find declaration for non-primitive type"
+                typestr, special = self.__typestr_from_node(
+                    typedecl, exogenous_name=exogenous_name, seen=seen
+                )
 
-            element_type = clang_type.element_type
-            t, s = self.__typestr_from_type(element_type, exogenous_name=exogenous_name)
-            assert t is not None
-            result.append(t)
-            if s:
-                special = True
+            return typestr, special
 
-            result.append(objc._C_ARY_E)
-            typestr = b"".join(result)
-
-        # CXType_Vector = 113,
-        elif clang_type.kind == TypeKind.VECTOR:
-            pass  # handled with CONSTANTARRAY above
-
-        # CXType_IncompleteArray = 114,
-        elif clang_type.kind == TypeKind.INCOMPLETEARRAY:
-            pass  # handled with CONSTANTARRAY above
-
-        # CXType_VariableArray = 115,
-        elif clang_type.kind == TypeKind.VARIABLEARRAY:
-            raise UnsuportedClangOptionError(clang_type.kind)
-
-        # CXType_DependentSizedArray = 116,
-        elif clang_type.kind == TypeKind.DEPENDENTSIZEDARRAY:
-            raise UnsuportedClangOptionError(clang_type.kind)
-
-        # CXType_MemberPointer = 117,
-        elif clang_type.kind == TypeKind.MEMBERPOINTER:
-            raise UnsuportedClangOptionError(clang_type.kind)
-
-        elif clang_type.kind == TypeKind.ATTRIBUTED:
-            return self.__typestr_from_type(clang_type.modified_type, exogenous_name)
-
-        else:
-            typedecl = clang_type.get_declaration()
-            if typedecl.kind == CursorKind.NO_DECL_FOUND:
-                return b"?", True
-            # assert (
-            # CursorKind.NO_DECL_FOUND != typedecl.kind
-            # ), "Couldn't find declaration for non-primitive type"
-            typestr, special = self.__typestr_from_node(
-                typedecl, exogenous_name=exogenous_name
-            )
-
-        return typestr, special
+        finally:
+            seen.remove(clang_type)
 
     __typestr_from_node_ignore = [
         CursorKind.OBJC_PROTOCOL_DECL,
@@ -2213,7 +2266,11 @@ class FrameworkParser(object):
 
     # noinspection PyProtectedMember
     def __typestr_from_node(
-        self, node: Cursor, exogenous_name: typing.Optional[str] = None
+        self,
+        node: Cursor,
+        exogenous_name: typing.Optional[str] = None,
+        is_pointee: bool = False,
+        seen: typing.Optional[typing.Set[typing.Any]] = None,
     ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
 
@@ -2224,126 +2281,146 @@ class FrameworkParser(object):
         @rtype : ( str, bool )
         """
         assert isinstance(node, Cursor)
+        if seen is None:
+            seen = set()
 
-        special: bool = False
-        typestr: typing.Optional[bytes] = node.objc_type_encoding
-        if typestr != b"?" and typestr != b"" and typestr is not None:
-            return typestr, special
+        if node in seen:
+            raise SelfReferentialTypeError("Recursive type")
 
-        # bail out of irrelevant cases
+        seen.add(node)
 
-        if (
-            node.kind.is_translation_unit()
-            or node.kind.is_attribute()
-            or node.kind.is_invalid()
-            or node.kind.is_statement()
-            or node.kind in self.__typestr_from_node_ignore
-        ):
-            return None, special
+        try:
 
-        # drill down into the type
-        if node.kind in self.__typestr_from_node_use_type or node.kind.is_expression():
-            clang_type = node.type
-            typestr, special = self.__typestr_from_type(
-                clang_type, exogenous_name=exogenous_name
-            )
-            assert isinstance(typestr, bytes)
-        # follow typedefs
-        elif node.kind == CursorKind.TYPEDEF_DECL:
-            underlying_type = node.underlying_typedef_type
-            typestr, special = self.__typestr_from_type(
-                underlying_type, exogenous_name=exogenous_name
-            )
-            assert isinstance(typestr, bytes)
-        # enums
-        elif node.kind == CursorKind.ENUM_DECL:
-            clang_type = node.enum_type
-            typestr, special = self.__typestr_from_type(
-                clang_type, exogenous_name=exogenous_name
-            )
-        # structs
-        elif node.kind == CursorKind.STRUCT_DECL:
-            result = [objc._C_STRUCT_B]
-            if node.spelling is None or node.spelling == "":
-                if exogenous_name is not None:
-                    result.append(b"_" + exogenous_name.encode())
-                    assert not exogenous_name.startswith(
+            special: bool = False
+            typestr: typing.Optional[bytes] = node.objc_type_encoding
+            if typestr != b"?" and typestr != b"" and typestr is not None:
+                return typestr, special
+
+            # bail out of irrelevant cases
+
+            if (
+                node.kind.is_translation_unit()
+                or node.kind.is_attribute()
+                or node.kind.is_invalid()
+                or node.kind.is_statement()
+                or node.kind in self.__typestr_from_node_ignore
+            ):
+                return None, special
+
+            # drill down into the type
+            if (
+                node.kind in self.__typestr_from_node_use_type
+                or node.kind.is_expression()
+            ):
+                clang_type = node.type
+                typestr, special = self.__typestr_from_type(
+                    clang_type, exogenous_name=exogenous_name, seen=seen
+                )
+                assert isinstance(typestr, bytes)
+            # follow typedefs
+            elif node.kind == CursorKind.TYPEDEF_DECL:
+                underlying_type = node.underlying_typedef_type
+                typestr, special = self.__typestr_from_type(
+                    underlying_type, exogenous_name=exogenous_name, seen=seen
+                )
+                assert isinstance(typestr, bytes)
+            # enums
+            elif node.kind == CursorKind.ENUM_DECL:
+                clang_type = node.enum_type
+                typestr, special = self.__typestr_from_type(
+                    clang_type, exogenous_name=exogenous_name, seen=seen
+                )
+            # structs
+            elif node.kind == CursorKind.STRUCT_DECL:
+                result = [objc._C_STRUCT_B]
+                if node.spelling is None or node.spelling == "":
+                    if exogenous_name is not None:
+                        result.append(b"_" + exogenous_name.encode())
+                        assert not exogenous_name.startswith(
+                            "const"
+                        ), "Qualifiers leaking into names!"
+                        special = True
+                else:
+                    assert not node.spelling.startswith(
                         "const"
                     ), "Qualifiers leaking into names!"
-                    special = True
-            else:
-                assert not node.spelling.startswith(
-                    "const"
-                ), "Qualifiers leaking into names!"
-                result.append(node.spelling.encode())
+                    result.append(node.spelling.encode())
 
-            result.append(b"=")
+                result.append(b"=")
 
-            for c in node.get_children():
-                if c.kind.is_attribute():
-                    continue
-                is_bf = c.is_bitfield()
-                bf_width = -1 if not is_bf else c.get_bitfield_width()
-                if is_bf and bf_width != -1:
-                    result.append(b"b%d" % (bf_width,))
+                try:
+                    for c in node.get_children():
+                        if c.kind.is_attribute():
+                            continue
+                        is_bf = c.is_bitfield()
+                        bf_width = -1 if not is_bf else c.get_bitfield_width()
+                        if is_bf and bf_width != -1:
+                            result.append(b"b%d" % (bf_width,))
+                        else:
+                            c_type = c.type
+                            t, s = self.__typestr_from_type(
+                                c_type, seen=seen, is_pointee=is_pointee
+                            )
+                            if s:
+                                special = True
+                            assert t is not None
+
+                            result.append(t)
+                except SelfReferentialTypeError:
+                    result = result[: result.index(b"=")]
+
+                result.append(objc._C_STRUCT_E)
+                typestr, special = b"".join(result), special
+            # unions
+            elif node.kind == CursorKind.UNION_DECL:
+                result = [objc._C_UNION_B]
+                if node.spelling is None or node.spelling == "":
+                    assert (
+                        exogenous_name is None or "union" not in exogenous_name
+                    ), exogenous_name
+                    if exogenous_name is not None:
+                        result.append(b"_" + exogenous_name.encode())
+                        assert not exogenous_name.startswith(
+                            "const"
+                        ), "Qualifiers leaking into names!"
+                        special = True
                 else:
-                    c_type = c.type
-                    t, s = self.__typestr_from_type(c_type)
+                    assert "union" not in node.spelling, node.spelling
+                    assert not node.spelling.startswith(
+                        "const"
+                    ), "Qualifiers leaking into names!"
+                    result.append(node.spelling.encode())
+
+                result.append(b"=")
+
+                for c in node.get_children():
+                    if c.kind.is_attribute():
+                        continue
+
+                    t, s = self.__typestr_from_node(c, seen=seen)
+                    assert isinstance(t, bytes)
                     if s:
                         special = True
-                    assert t is not None
+                    if t is not None:
+                        result.append(t)
 
-                    result.append(t)
-
-            result.append(objc._C_STRUCT_E)
-            typestr, special = b"".join(result), special
-        # unions
-        elif node.kind == CursorKind.UNION_DECL:
-            result = [objc._C_UNION_B]
-            if node.spelling is None or node.spelling == "":
-                assert (
-                    exogenous_name is None or "union" not in exogenous_name
-                ), exogenous_name
-                if exogenous_name is not None:
-                    result.append(b"_" + exogenous_name.encode())
-                    assert not exogenous_name.startswith(
-                        "const"
-                    ), "Qualifiers leaking into names!"
-                    special = True
+                result.append(objc._C_UNION_E)
+                typestr, special = b"".join(result), special
             else:
-                assert "union" not in node.spelling, node.spelling
-                assert not node.spelling.startswith(
-                    "const"
-                ), "Qualifiers leaking into names!"
-                result.append(node.spelling.encode())
+                # try drilling down to canonical
+                canonical = node.canonical
+                if node != canonical:
+                    return self.__typestr_from_node(
+                        node.canonical, exogenous_name=exogenous_name, seen=seen
+                    )
+                else:
+                    print("Unhandled node:", node)
 
-            result.append(b"=")
+            assert isinstance(typestr, bytes)
+            return typestr, special
 
-            for c in node.get_children():
-                if c.kind.is_attribute():
-                    continue
-
-                t, s = self.__typestr_from_node(c)
-                assert isinstance(t, bytes)
-                if s:
-                    special = True
-                if t is not None:
-                    result.append(t)
-
-            result.append(objc._C_UNION_E)
-            typestr, special = b"".join(result), special
-        else:
-            # try drilling down to canonical
-            canonical = node.canonical
-            if node != canonical:
-                return self.__typestr_from_node(
-                    node.canonical, exogenous_name=exogenous_name
-                )
-            else:
-                print("Unhandled node:", node)
-
-        assert isinstance(typestr, bytes)
-        return typestr, special
+        finally:
+            seen.remove(node)
 
 
 class UnsuportedClangOptionError(Exception):
@@ -2412,10 +2489,14 @@ class DefinitionVisitor(AbstractClangVisitor):
         underlying_type = node.underlying_typedef_type
         underlying_name = getattr(underlying_type, "spelling", None)
         if "union" in underlying_name:
-            from .clang_tools import dump_node
+            if underlying_name.startswith("union "):
+                underlying_name = underlying_name[6:].lstrip()
 
-            dump_node(node)
-            assert 0
+            else:
+                from .clang_tools import dump_node
+
+                dump_node(node)
+                assert 0, underlying_name
 
         # Add typedef to parser
         self._parser.add_typedef(typedef_name, underlying_name)
