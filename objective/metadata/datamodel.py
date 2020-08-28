@@ -12,7 +12,7 @@ This file is currently incomplete. The following needs to be added
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from dataclasses_json import Undefined, config, dataclass_json
 
@@ -155,7 +155,7 @@ class CallbackArgInfo2:
     """ Information about the argument of a callback to a callback """
 
     # The name of the argument
-    name: str
+    name: Optional[str]
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -194,7 +194,7 @@ class CallbackInfo2:
     """ Information about a callback signature for a callback """
 
     # Information about the return value
-    retval: CallbackArgInfo2
+    retval: Optional[CallbackArgInfo2]
 
     # Information about all arguments
     args: List[CallbackArgInfo2]
@@ -288,7 +288,7 @@ class ArgInfo:
     typestr: bytes = field(metadata=bytes_config)
 
     # Name of the argument
-    name: str = None
+    name: str
 
     # True if *typestr* is not the same as the value
     # in the ObjC runtime.
@@ -302,6 +302,70 @@ class ArgInfo:
     # For pointer arguments (_C_PTR) mark if the data is
     # passed in (_C_IN), out (_C_OUT) or both (_C_INOUT).
     type_modifier: Optional[bytes] = field(metadata=bytes_config, default=None)
+
+    # For pointer (_C_PTR) or object (_C_ID) arguments
+    # tell if NULL is an acceptable value for the argument in C.
+    null_accepted: Optional[bool] = None
+
+    # If true this argument is a printf format string for
+    # variadic callable.
+    printf_format: bool = False
+
+    # Used with pointers to _C_ID: If *true* a value
+    # returned through this argument is already retained
+    # (caller has to call -release when it no longer
+    # needds the value).
+    already_retained: Optional[bool] = False
+
+    # Used with pointers to CoreFoundation objects.
+    # If *true* a value returned through this argument is
+    # already retained # (caller has to call CFRelease when
+    # it no longer needds the value).
+    already_cfretained: Optional[bool] = False
+
+    # Signature information for a block or function argument
+    callable: Optional[CallbackInfo] = None
+
+    # If the argument is a C array with the size in another
+    # argument this option describes which argument contains
+    # the size.
+    # - value: The argument containing the size
+    # - (in_value, out_value); The *in_value*-th argument
+    #   contains the size of the array before the call, the
+    #   *out_value* contains the (effective) size after the call.
+    c_array_length_in_arg: Optional[Union[int, Tuple[int, int]]] = None
+
+    # If true the argument is a C array (with a length specified by one
+    # of the other options). The effective length of the array on return
+    # is in the return value of the function/method.
+    c_array_length_in_result: bool = False
+
+    # If true the argument is a C-array for which the
+    # required size is either not known or cannot be described
+    # by the metadata system.
+    c_array_of_variable_length: bool = False
+
+    # If true the argument is a C-array with the type-appropriated
+    # NUL-value at the end. Python users won't use the delimiter.
+    c_array_delimited_by_null: bool = False
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass(frozen=True)
+class ReturnInfo:
+    """ Information about a function/method return value """
+
+    # Type encoding (as used by PyObjC)
+    typestr: bytes = field(metadata=bytes_config)
+
+    # True if *typestr* is not the same as the value
+    # in the ObjC runtime.
+    typestr_special: bool = False
+
+    # Name of the type associated with *typestr*, will
+    # by used when there is a better type name than
+    # the default.
+    type_name: Optional[str] = None
 
     # For pointer (_C_PTR) or object (_C_ID) arguments
     # tell if NULL is an acceptable value for the argument in C.
@@ -322,6 +386,15 @@ class ArgInfo:
     # Signature information for a block or function argument
     callable: Optional[CallbackInfo] = None
 
+    # If true the argument is a C-array for which the
+    # required size is either not known or cannot be described
+    # by the metadata system.
+    c_array_of_variable_length: bool = False
+
+    # If true the argument is a C-array with the type-appropriated
+    # NUL-value at the end. Python users won't use the delimiter.
+    c_array_delimited_by_null: bool = False
+
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
@@ -329,7 +402,7 @@ class FunctionInfo:
     """ Information about a function"""
 
     # Information about the return value
-    retval: ArgInfo
+    retval: ReturnInfo
 
     # Information about all arguments
     args: List[ArgInfo]
@@ -364,7 +437,7 @@ class MethodInfo:
     class_method: bool
 
     # Information about the return value
-    retval: ArgInfo
+    retval: ReturnInfo
 
     # Information about all arguments
     args: List[ArgInfo]
@@ -602,6 +675,3 @@ class FrameworkMetadata:
 
         with open(path, "w") as stream:
             json.dump({"definitions": data}, stream)
-
-
-# meta = FrameworkMetadata.from_file("../../X/metadata/raw/x86_64-11.0.fwinfo")

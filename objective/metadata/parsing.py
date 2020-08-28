@@ -851,13 +851,6 @@ class FrameworkParser(object):
                         )
                         print(diagnostic_string)
 
-        # This is arguably not necessary, but matches the behavior of
-        # the previous parsing engine.
-        # Ideally we would get rid of this.
-        if len(func["args"]) == 0:
-            arginfo = {"typestr": b"v"}
-            func["args"].append(arginfo)
-
         # Log message
         if self.verbose:
             string = (
@@ -1626,9 +1619,6 @@ class FrameworkParser(object):
 
             result["args"].append(arginfo)
 
-        if len(result["args"]) == 0:
-            result["args"].append({"typestr": b"v"})
-
         return result
 
     def __extract_block(self, block: Cursor) -> CallbackInfo:
@@ -1700,9 +1690,6 @@ class FrameworkParser(object):
                 # arginfo["callable"] = self.__extract_function2(arg_type)
 
             result["args"].append(arginfo)
-
-        if len(result["args"]) == 0:
-            result["args"].append({"typestr": b"v"})
 
         return result
 
