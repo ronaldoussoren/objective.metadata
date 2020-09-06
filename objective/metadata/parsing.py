@@ -1747,7 +1747,7 @@ class FrameworkParser(object):
                     #       sizeof(BOOL) == sizoef(bool), just using
                     #       _C_BOOL should work (and is the default
                     #       encoding for ARM64)
-                    assert canonical_type.kind == TypeKind.SCHAR
+                    assert canonical_type.kind in (TypeKind.SCHAR, TypeKind.BOOL)
                     typestr = objc._C_NSBOOL
                     special = True
                 elif clang_type.ever_defines_to("Boolean"):

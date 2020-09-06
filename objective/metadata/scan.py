@@ -3,13 +3,10 @@ import os
 import sys
 import textwrap
 import time
-import typing
 
 import objc
-from macholib.mach_o import CPU_TYPE_NAMES
-from macholib.MachO import MachO
 
-from . import parsing, storage
+from . import parsing, storage, xcode
 
 opt_parser = optparse.OptionParser()
 opt_parser.add_option(
@@ -67,21 +64,6 @@ opt_parser.add_option(
 )
 
 
-def macho_archs(filename: str) -> typing.Set[str]:
-    result = set()
-
-    m = MachO(filename)
-    for hdr in m.headers:
-        arch = CPU_TYPE_NAMES[hdr.header.cputype]
-        if arch == "PowerPC":
-            arch = "ppc"
-        elif arch == "PowerPC64":
-            arch = "ppc64"
-        result.add(arch)
-
-    return result
-
-
 def merge_meth_info(current, update):
     for a in update.get("args", ()):
         if a not in current.get("args", ()):
@@ -112,6 +94,7 @@ def locate_property(lst, name):
 
 
 def merge_exceptions(current, updates):
+    return
     for funcname, funcdata in updates["definitions"]["functions"].items():
         if funcname not in current["definitions"]:
             current["definitions"]["functions"][funcname] = funcdata
@@ -163,9 +146,16 @@ def scan_headers(
     verbose=False,
 ):
     if start_header is None:
-        path = objc.dyld_framework("Headers", framework)
+        path = os.path.join(
+            sdk_root, "System", "Library", "Frameworks", framework + ".framework"
+        )
+        if os.path.exists(path):
+            file_archs = xcode.archs_for_framework(path)
 
-        file_archs = macho_archs(path)
+        else:
+            path = objc.dyld_framework("Headers", framework)
+            file_archs = xcode.archs_for_framework(path)
+
         if arch not in file_archs:
             print(
                 "Framework %r not available for arch %r" % (framework, arch),
@@ -173,23 +163,10 @@ def scan_headers(
             )
             sys.exit(1)
 
-        path = framework_path = os.path.dirname(path)
-        path = os.path.join(sdk_root, path[1:], "Headers")
+        path = os.path.join(path, "Headers")
         if not os.path.exists(path):
-            print(framework_path)
-            if not os.path.exists(os.path.join(sdk_root, framework_path[1:])):
-                path = os.path.join(framework_path, "Headers")
-                if not os.path.exists(path):
-                    print(
-                        "Framework without headers[2]",
-                        os.path.join(sdk_root, framework_path[1:]),
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-
-            else:
-                print("Framework without headers[1]", file=sys.stderr)
-                sys.exit(1)
+            print(f"Framework without headers {path!r}", file=sys.stderr)
+            sys.exit(1)
 
         files = os.listdir(path)
         if len(files) == 1:
