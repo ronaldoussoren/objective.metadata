@@ -75,9 +75,29 @@ def make_pairs(
         yield (first, second)
 
 
+ConfigInfo = typing.TypedDict(
+    "ConfigInfo",
+    {
+        "framework": str,
+        "raw": str,  # make this a Path
+        "exceptions": str,  # make this a Path
+        "start-header": typing.Optional[str],
+        "pre-headers": typing.List[str],
+        "post-headers": typing.List[str],
+        "link-framework": str,
+        "compiled": str,  # make this a Path
+        "protocols-file": str,  # make this a Path
+        "only-headers": typing.Optional[typing.List[str]],
+        "documentation-dir": str,  # make this a Path
+        "python-package": str,
+    },
+    total=False,
+)
+
+
 def parse_ini(
     ini_file: typing.Union[str, os.PathLike], ini_sections: typing.Sequence[str]
-) -> dict:  # incomplete type
+) -> typing.Iterable[ConfigInfo]:  # incomplete type
     ini_dir = os.path.dirname(ini_file)
 
     cfg = configparser.ConfigParser()
@@ -86,7 +106,7 @@ def parse_ini(
         ini_sections = cfg.sections()
 
     for section in ini_sections:
-        info = {"framework": cfg.get(section, "framework")}
+        info: ConfigInfo = {"framework": cfg.get(section, "framework")}
 
         if cfg.has_option(section, "raw"):
             info["raw"] = os.path.join(ini_dir, cfg.get(section, "raw"))
@@ -186,8 +206,8 @@ def sdk_ver_from_path(path: str) -> typing.Optional[float]:
         process = subprocess.Popen(
             ["xcodebuild", "-version", "-sdk"], stderr=dn, stdout=-1
         )
-        out, unused_err = process.communicate()
-        out = out.decode()
+        out_raw, unused_err = process.communicate()
+        out = out_raw.decode()
         versions = out.split("SDKVersion: ")
         for ver in versions:
             if path in ver:

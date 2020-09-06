@@ -1357,151 +1357,39 @@ class ExceptionSpecificationKind(enum.IntEnum):
     UNPARSED = 8
 
 
-class ObjcDeclQualifier(object):
-    Flag_None = 0x0
-    Flag_In = 0x1
-    Flag_InOut = 0x2
-    Flag_Out = 0x4
-    Flag_Bycopy = 0x8
-    Flag_Byref = 0x10
-    Flag_Oneway = 0x20
-    # noinspection PyProtectedMember
-    __val_to_encode_string = {
-        Flag_In: objc._C_IN,
-        Flag_InOut: objc._C_INOUT,
-        Flag_Out: objc._C_OUT,
-        Flag_Bycopy: objc._C_BYCOPY,
-        Flag_Byref: b"R",  # objc._C_BYREF,
-        Flag_Oneway: objc._C_ONEWAY,
-    }
-
-    def __init__(self, value):
-        self.value = value
-
-    def __eq__(self, other):
-        return self.value == other.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __repr__(self):
-        string = "ObjcDeclQualifier("
-        found_any = False
-        for attr in dir(self):
-            if attr.startswith("Flag_"):
-                flag_val = getattr(self, attr)
-                if bool(self.value & flag_val):
-                    if found_any:
-                        string += "|"
-                    string += attr[5:]
-                    found_any = True
-        if not found_any:
-            string += "None"
-        string += ")"
-        return string
+class ObjCDeclQualifier(enum.IntFlag):
+    IN = 0x1
+    INOUT = 0x2
+    OUT = 0x4
+    BYCOPY = 0x8
+    BYREF = 0x10
+    ONEWAY = 0x20
 
     @staticmethod
     def from_encode_string(string):
-        val = ObjcDeclQualifier.Flag_None
+        val = ObjCDeclQualifier(0)
         string = string or ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
+        for value, encode_string in _val_to_encode_string.items():
             if encode_string in string:
                 val = val | value
-        return ObjcDeclQualifier(val)
+        return val
 
     def to_encode_string(self):
         string = ""
-        for value, encode_string in ObjcDeclQualifier.__val_to_encode_string.items():
-            if bool(self.value & value):
+        for value, encode_string in _val_to_encode_string.items():
+            if self & value:
                 string = string + encode_string
         return string
 
-    def add_flags(self, other):
-        if not isinstance(other, ObjcDeclQualifier):
-            other = ObjcDeclQualifier(int(other))
-        self.value = self.value | other.value
 
-    def subtract_flags(self, other):
-        if not isinstance(other, ObjcDeclQualifier):
-            other = ObjcDeclQualifier(int(other))
-        self.value = self.value & (~other.value)
-
-    @property
-    def is_in(self):
-        return bool(self.value & self.Flag_In)
-
-    @is_in.setter
-    def is_in(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_In
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_In
-
-    @property
-    def is_inout(self):
-        return bool(self.value & self.Flag_InOut)
-
-    @is_inout.setter
-    def is_inout(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_InOut
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_InOut
-
-    @property
-    def is_out(self):
-        return bool(self.value & self.Flag_Out)
-
-    @is_out.setter
-    def is_out(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Out
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Out
-
-    @property
-    def is_bycopy(self):
-        return bool(self.value & self.Flag_Bycopy)
-
-    @is_bycopy.setter
-    def is_bycopy(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Bycopy
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Bycopy
-
-    @property
-    def is_byref(self):
-        return bool(self.value & self.Flag_Byref)
-
-    @is_byref.setter
-    def is_byref(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Byref
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Byref
-
-    @property
-    def is_oneway(self):
-        return bool(self.value & self.Flag_Oneway)
-
-    @is_oneway.setter
-    def is_oneway(self, value):
-        if value:
-            self.value |= ObjcDeclQualifier.Flag_Oneway
-        else:
-            self.value &= ~ObjcDeclQualifier.Flag_Oneway
-
-    @property
-    def is_none(self):
-        return self.value == self.Flag_None
-
-    @is_none.setter
-    def is_none(self, value):
-        if value:
-            self.value = self.Flag_None
-        else:
-            raise ValueError(value)
+_val_to_encode_string = {
+    ObjCDeclQualifier.IN: objc._C_IN,
+    ObjCDeclQualifier.INOUT: objc._C_INOUT,
+    ObjCDeclQualifier.OUT: objc._C_OUT,
+    ObjCDeclQualifier.BYCOPY: objc._C_BYCOPY,
+    ObjCDeclQualifier.BYREF: b"R",  # objc._C_BYREF,
+    ObjCDeclQualifier.ONEWAY: objc._C_ONEWAY,
+}
 
 
 class Version(ctypes.Structure):
@@ -2062,7 +1950,7 @@ class Cursor(ctypes.Structure):
         ]:
             return None
         val = conf.lib.clang_Cursor_getObjCDeclQualifiers(self)
-        return ObjcDeclQualifier(val)
+        return ObjCDeclQualifier(val)
 
     @property
     def underlying_typedef_type_valid(self):

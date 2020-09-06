@@ -154,26 +154,19 @@ class ExternInfo:
 class CallbackArgInfo2:
     """ Information about the argument of a callback to a callback """
 
-    # The name of the argument
-    name: Optional[str]
-
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
-
-    # True if *typestr* is not the same as the value
-    # in the ObjC runtime.
-    typestr_special: bool
 
     # Name of the type associated with *typestr*, will
     # by used when there is a better type name than
     # the default.
-    type_name: Optional[str]
+    type_name: Optional[str] = None
 
     # Is *NULL* and acceptable value for the C API?
     # - True: yes
     # - False: no
     # - None: don't know (treated as True by PyObjC)
-    null_accepted: Optional[bool]
+    null_accepted: Optional[bool] = None
 
     # Used with pointers to _C_ID: If *true* a value
     # returned through this argument is already retained
@@ -216,9 +209,6 @@ class CallbackInfo2:
 @dataclass(frozen=True)
 class CallbackArgInfo:
     """ Information about the argument of a callback """
-
-    # The name of the argument
-    name: str
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -267,16 +257,16 @@ class CallbackInfo:
     args: List[CallbackArgInfo]
 
     # Is this a variadic function?
-    variadic: bool
+    variadic: bool = False
 
     # Which of the fixed arguments for a varidic function
     # is a printf format string (if any)
-    printf_format: Optional[int]
+    printf_format: Optional[int] = None
 
     # Does this variadic function have a number of
     # arguments of the same time, ending with a NUL value
     # for the type?
-    null_terminated: bool
+    null_terminated: bool = False
 
 
 @dataclass_json(undefined=Undefined.RAISE)
@@ -554,7 +544,7 @@ class ClassInfo:
     availability: Optional[AvailabilityInfo] = None
 
     # Categories defined on this class
-    categories: Optional[Set[str]] = None
+    categories: Set[str] = field(default_factory=set)
 
 
 @dataclass_json(undefined=Undefined.RAISE)
@@ -567,10 +557,10 @@ class CFTypeInfo:
 
     # Name of the ...GetTypeID function for this CFType
     # (can be None when autodetection fails)
-    gettypeid_func: Optional[str]
+    gettypeid_func: Optional[str] = None
 
     # Name of the ObjC class this type is tollfree bridged to.
-    tollfree: Optional[str]
+    tollfree: Optional[str] = None
 
 
 @dataclass_json(undefined=Undefined.RAISE)
