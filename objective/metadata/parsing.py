@@ -11,6 +11,7 @@ from dataclasses import replace
 
 import objc
 
+from . import util
 from .clang import (
     Config,
     Cursor,
@@ -104,7 +105,7 @@ class FrameworkParser(object):
         self.sdk = sdk
         self.min_deploy = min_deploy
 
-        self.headers: typing.Set[str] = set()
+        self.headers: typing.Set[str] = util.sorted_set()
 
         self.meta = FrameworkMetadata()
 
@@ -164,6 +165,15 @@ class FrameworkParser(object):
         Returns a dictionary with information about what was parsed and
         the definitions.
         """
+        for class_info in self.meta.classes.values():
+            class_info.methods.sort(key=lambda item: (item.selector, item.class_method))
+
+        for prot_info in self.meta.formal_protocols.values():
+            prot_info.methods.sort(key=lambda item: (item.selector, item.class_method))
+
+        for prot_info in self.meta.informal_protocols.values():
+            prot_info.methods.sort(key=lambda item: (item.selector, item.class_method))
+
         return {
             "framework": self.framework,
             "arch": self.arch,
@@ -664,7 +674,7 @@ class FrameworkParser(object):
 
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = set()
+                attributes: typing.Set[str] = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -716,7 +726,7 @@ class FrameworkParser(object):
                 assert typestr is not None
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = set()
+                attributes = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -824,7 +834,7 @@ class FrameworkParser(object):
                 super=superclass_name,
                 implements=[],
                 methods=[],
-                categories=set(),
+                categories=util.sorted_set(),
                 properties=[],
                 availability=self._get_availability(node),
             )
@@ -852,7 +862,7 @@ class FrameworkParser(object):
 
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = set()
+                attributes = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -899,7 +909,11 @@ class FrameworkParser(object):
             class_info = self.meta.classes[class_name]
         else:
             self.meta.classes[class_name] = class_info = ClassInfo(
-                categories=set(), methods=[], implements=[], properties=[], super=None
+                categories=util.sorted_set(),
+                methods=[],
+                implements=[],
+                properties=[],
+                super=None,
             )
 
         if category_name not in class_info.categories:
@@ -926,7 +940,7 @@ class FrameworkParser(object):
 
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = set()
+                attributes = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -1629,7 +1643,7 @@ class FrameworkParser(object):
         """
         assert isinstance(clang_type, Type)
         if seen is None:
-            seen = set()
+            seen = util.sorted_set()
 
         if clang_type in seen:
             raise SelfReferentialTypeError("Nested type")
@@ -1940,7 +1954,7 @@ class FrameworkParser(object):
         """
         assert isinstance(node, Cursor)
         if seen is None:
-            seen = set()
+            seen = util.sorted_set()
 
         if node in seen:
             raise SelfReferentialTypeError("Recursive type")

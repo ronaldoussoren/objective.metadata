@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from dataclasses_json import Undefined, config, dataclass_json
 
+from . import util
+
 FILE_TYPE = Union[str, os.PathLike[str]]
 
 bytes_config = config(
@@ -485,7 +487,7 @@ class PropertyInfo:
     # Property attributes (such as readonline, readwrite)
     # ... -> should extract custom getter/setter into its
     #        own attribute
-    attributes: Set[str] = field(default_factory=set)
+    attributes: Set[str] = field(default_factory=util.sorted_set)
 
     # Category that this method is defined in
     # (*None* for methods in the main class
@@ -544,7 +546,7 @@ class ClassInfo:
     availability: Optional[AvailabilityInfo] = None
 
     # Categories defined on this class
-    categories: Set[str] = field(default_factory=set)
+    categories: Set[str] = field(default_factory=util.sorted_set)
 
 
 @dataclass_json(undefined=Undefined.RAISE)
