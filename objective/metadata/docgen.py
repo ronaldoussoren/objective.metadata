@@ -45,7 +45,7 @@ from typing import (
 )
 
 import objc
-from objc._callable_docstr import describe_type
+from objc._callable_docstr import describe_type  # type: ignore
 
 from .datamodel import (
     ArgInfo,
