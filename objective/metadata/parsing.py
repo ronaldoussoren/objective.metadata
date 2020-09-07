@@ -726,7 +726,7 @@ class FrameworkParser(object):
                 assert typestr is not None
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = util.sorted_set()
+                attributes: typing.Set[str] = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -862,7 +862,7 @@ class FrameworkParser(object):
 
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = util.sorted_set()
+                attributes: typing.Set[str] = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)
@@ -940,7 +940,7 @@ class FrameworkParser(object):
 
                 prop_attr = decl.get_property_attributes()
                 getter = setter = None
-                attributes = util.sorted_set()
+                attributes: typing.Set[str] = util.sorted_set()
                 for item in prop_attr or ():
                     if isinstance(item, str):
                         attributes.add(item)

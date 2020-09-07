@@ -1,3 +1,8 @@
+"""
+Interaction with code
+
+This code needs to be refactored
+"""
 import os
 import re
 import subprocess
@@ -48,7 +53,7 @@ def sdk_ver_from_path(
                 try:
                     ver_tuple = tuple(int(x) for x in ver_str.split("."))
                     assert len(ver_tuple) == 2
-                    return ver_tuple[:2]
+                    return ver_tuple[0], ver_tuple[1]
                 except ValueError:
                     pass
     return None

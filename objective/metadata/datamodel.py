@@ -12,7 +12,17 @@ This file is currently incomplete. The following needs to be added
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from dataclasses_json import Undefined, config, dataclass_json
 
@@ -24,6 +34,27 @@ bytes_config = config(
     encoder=lambda value: None if value is None else value.decode("ascii"),
     decoder=lambda value: None if value is None else value.encode("ascii"),
 )
+
+T = TypeVar("T")
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass(frozen=True)
+class MergeInfo(Generic[T]):
+    """
+    At a number of places information
+    will be different between different
+    CPU architectures.
+
+    This generic class is used to represent
+    those cases.
+    """
+
+    # Value on x86_64 architecture
+    x86_64: T
+
+    # Value on arm64 architecture
+    arm64: T
 
 
 @dataclass_json(undefined=Undefined.RAISE)
@@ -72,7 +103,7 @@ class EnumInfo:
     """ Information about individual enum labels """
 
     # Value for this enum label
-    value: int
+    value: Union[int, MergeInfo[int]]
 
     # Name of the associated enum type
     enum_type: str
@@ -115,7 +146,7 @@ class StructInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ExternInfo:
-    """ Information about C global varialble (constants) """
+    """ Information about C global variable (constants) """
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -667,3 +698,16 @@ class FrameworkMetadata:
 
         with open(path, "w") as stream:
             json.dump({"definitions": data}, stream)
+
+    if TYPE_CHECKING:
+        # Dataclasses_json adds (amongst others) methods from_dict and
+        # to_dict which mypy doesn't know about.
+        #
+        # The declaration below teach the typechecker about these methods.
+
+        @classmethod
+        def from_dict(cls, value: dict) -> "FrameworkMetadata":
+            ...
+
+        def to_dict(self) -> dict:
+            ...
