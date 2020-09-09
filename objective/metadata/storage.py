@@ -42,8 +42,23 @@ def _decode_object(pairs: typing.List[typing.Tuple[str, typing.Any]]) -> typing.
             "typestr_override",
             "sel_of_type",
         }:
+            if isinstance(v, list) and len(v) == 2:
+                # exception files can contain old metadata with
+                # 2 variants for the type [32-bit, 64-bit], this
+                # will accept those values and ignores the 32-bit
+                # value.
+                #
+                # This is temporary, those files need to be updated!
+                v = v[1]
             assert isinstance(v, str)
-            result[k] = v.encode()
+            if k in ("typestr_override", "type_override"):
+                # Current exception files use ".._override" for replaced
+                # type encodings. Translate these to their cannonical form.
+                #
+                # This is temporary, those files need to be updated!
+                result["typestr"] = v.encode()
+            else:
+                result[k] = v.encode()
 
         else:
             result[k] = v

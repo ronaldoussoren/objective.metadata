@@ -49,6 +49,7 @@ from .datamodel import (
     ReturnInfo,
     StructInfo,
 )
+from .xcode import sdk_ver_from_path
 
 Config.set_library_path(
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
@@ -107,7 +108,10 @@ class FrameworkParser(object):
 
         self.headers: typing.Set[str] = util.sorted_set()
 
-        self.meta = FrameworkMetadata()
+        self.meta = FrameworkMetadata(
+            sdk_version=".".join(str(x) for x in sdk_ver_from_path(self.sdk))
+        )
+        self.meta.architectures.add(self.arch)
 
     def parse(self) -> None:
 

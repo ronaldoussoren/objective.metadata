@@ -40,7 +40,7 @@ T = TypeVar("T")
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
-class MergeInfo(Generic[T]):
+class MergedInfo(Generic[T]):
     """
     At a number of places information
     will be different between different
@@ -103,10 +103,12 @@ class EnumInfo:
     """ Information about individual enum labels """
 
     # Value for this enum label
-    value: Union[int, MergeInfo[int]]
+    value: Union[int, MergedInfo[int]]
 
     # Name of the associated enum type
-    enum_type: str
+    # This is optional for exception data, should
+    # be set otherwise!
+    enum_type: Optional[str] = None
 
     # API availability
     availability: Optional[AvailabilityInfo] = None
@@ -348,6 +350,9 @@ class ArgInfo:
 
     # Signature information for a block or function argument
     callable: Optional[CallbackInfo] = None
+
+    # True if the callable is stored by the called API
+    callable_retained: Optional[bool] = None
 
     # If the argument is a C array with the size in another
     # argument this option describes which argument contains
@@ -595,6 +600,10 @@ class CFTypeInfo:
     # Name of the ObjC class this type is tollfree bridged to.
     tollfree: Optional[str] = None
 
+    # Used in exception information
+    # Need to investigate why this is needed, should not happen!
+    opaque: Optional[bool] = None
+
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
@@ -665,6 +674,8 @@ class FunctionMacroInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class FrameworkMetadata:
+    architectures: Set[str] = field(default_factory=util.sorted_set)
+    sdk_version: Optional[str] = None
     enum_type: Dict[str, EnumTypeInfo] = field(default_factory=dict)
     enum: Dict[str, EnumInfo] = field(default_factory=dict)
     structs: Dict[str, StructInfo] = field(default_factory=dict)
@@ -692,6 +703,77 @@ class FrameworkMetadata:
         del raw_data
 
         return FrameworkMetadata.from_dict(data["definitions"])
+
+    def to_file(self, path: FILE_TYPE) -> None:
+        data = self.to_dict()
+
+        with open(path, "w") as stream:
+            json.dump({"definitions": data}, stream)
+
+    if TYPE_CHECKING:
+        # Dataclasses_json adds (amongst others) methods from_dict and
+        # to_dict which mypy doesn't know about.
+        #
+        # The declaration below teach the typechecker about these methods.
+
+        @classmethod
+        def from_dict(cls, value: dict) -> "FrameworkMetadata":
+            ...
+
+        def to_dict(self) -> dict:
+            ...
+
+
+@dataclass_json
+@dataclass
+class ExceptionData:
+    """
+    Exceptions data
+
+    This is work in progress, at least some of the dataclasses
+    should have variants for the exception file (required field
+    in regular file, optional in exception file; likewise for the
+    'ignored' field which is only used in exception data)
+    """
+
+    enum_type: Dict[str, EnumTypeInfo] = field(default_factory=dict)
+    enum: Dict[str, EnumInfo] = field(default_factory=dict)
+    # structs: Dict[str, StructInfo] = field(default_factory=dict)
+    # externs: Dict[str, ExternInfo] = field(default_factory=dict)
+    # cftypes: Dict[str, CFTypeInfo] = field(default_factory=dict)
+    # literals: Dict[str, LiteralInfo] = field(default_factory=dict)
+    # formal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
+    # informal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
+    # classes: Dict[str, ClassInfo] = field(default_factory=dict)
+    # aliases: Dict[str, AliasInfo] = field(default_factory=dict)
+    # expressions: Dict[str, ExpressionInfo] = field(default_factory=dict)
+    # func_macros: Dict[str, FunctionMacroInfo] = field(default_factory=dict)
+    # functions: Dict[str, FunctionInfo] = field(default_factory=dict)
+
+    @classmethod
+    def from_file(cls, path: FILE_TYPE) -> "FrameworkMetadata":
+        with open(path, "r") as stream:
+            raw_data = stream.read()
+
+        # Strip optional leading comment block
+        while raw_data.startswith("//"):
+            _, _, raw_data = raw_data.partition("\n")
+
+        data = json.loads(raw_data)
+        del raw_data
+
+        if "classes" in data["definitions"]:
+            del data["definitions"]["classes"]
+        if "functions" in data["definitions"]:
+            del data["definitions"]["functions"]
+        if "formal_protocols" in data["definitions"]:
+            del data["definitions"]["formal_protocols"]
+        if "informal_protocols" in data["definitions"]:
+            del data["definitions"]["informal_protocols"]
+        if "cftypes" in data["definitions"]:
+            del data["definitions"]["cftypes"]
+
+        return FrameworkMetadata.from_dict(data["definitions"], infer_missing=True)
 
     def to_file(self, path: FILE_TYPE) -> None:
         data = self.to_dict()

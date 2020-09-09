@@ -50,11 +50,13 @@ from objc._callable_docstr import describe_type  # type: ignore
 from .datamodel import (
     ArgInfo,
     AvailabilityInfo,
+    ExceptionData,
     FrameworkMetadata,
     FunctionInfo,
     MethodInfo,
     ReturnInfo,
 )
+from .merging import merge_framework_metadata
 from .topsort import topological_sort
 
 T = TypeVar("T")
@@ -490,11 +492,12 @@ def generate_documentation(
 ):
     print(f"Generate documentation {output_fn!r}")
 
-    # exceptions = load_framework_info(exceptions_fn)
+    exceptions = ExceptionData.from_file(exceptions_fn)
     headerinfo = [FrameworkMetadata.from_file(fn) for fn in headerinfo_fns]
 
     # TODO: Introduce function to merge headerinfo and exceptions, used here
     #       and by the compiler
+    mergedinfo = merge_framework_metadata(exceptions, headerinfo)
     mergedinfo = headerinfo[0]
 
     with open(output_fn, "w") as fp:
