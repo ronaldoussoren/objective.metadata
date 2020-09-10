@@ -788,7 +788,9 @@ class ExceptionData:
         # The declaration below teach the typechecker about these methods.
 
         @classmethod
-        def from_dict(cls, value: dict) -> "FrameworkMetadata":
+        def from_dict(
+            cls, value: dict, infer_missing: bool = False
+        ) -> "FrameworkMetadata":
             ...
 
         def to_dict(self) -> dict:
