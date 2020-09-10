@@ -822,7 +822,7 @@ class FrameworkParser(object):
 
         return meta
 
-    def add_class(self, node: Cursor):
+    def add_class(self, node: Cursor) -> None:
         if node.spelling in self.meta.classes:
             class_info = self.meta.classes[node.spelling]
         else:
@@ -897,7 +897,7 @@ class FrameworkParser(object):
         if self.verbose:
             print(f"Added class: {node.spelling}")
 
-    def add_category(self, node: Cursor):
+    def add_category(self, node: Cursor) -> None:
         category_name = node.spelling
         for decl in node.get_children():
             if decl.kind == CursorKind.OBJC_CLASS_REF:
@@ -1633,7 +1633,7 @@ class FrameworkParser(object):
         self,
         clang_type: Type,
         exogenous_name: typing.Optional[str] = None,
-        is_pointee=False,
+        is_pointee: bool = False,
         seen: typing.Optional[typing.Set[typing.Any]] = None,
     ) -> typing.Tuple[typing.Optional[bytes], bool]:
         """
@@ -2129,13 +2129,13 @@ class DefinitionVisitor(AbstractClangVisitor):
         # headers on x86_64)
         self.__all_structs: typing.Dict[str, Type] = {}
 
-    def visit(self, node: Cursor):
+    def visit(self, node: Cursor) -> None:
         if not self._parser.should_process_cursor(node):
             return
 
         super(DefinitionVisitor, self).visit(node)
 
-    def visit_var_decl(self, node: Cursor):
+    def visit_var_decl(self, node: Cursor) -> None:
         linkage = node.linkage
         if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUE_EXTERNAL:
             self._parser.add_extern(node.spelling, node)
@@ -2143,23 +2143,23 @@ class DefinitionVisitor(AbstractClangVisitor):
         elif linkage == LinkageKind.INTERNAL:
             self._parser.add_static_const(node.spelling, node)
 
-    def visit_enum_decl(self, node: Cursor):
+    def visit_enum_decl(self, node: Cursor) -> None:
         self._parser.add_enumeration(node)
 
-    def visit_struct_decl(self, node: Cursor):
+    def visit_struct_decl(self, node: Cursor) -> None:
         self.descend(node)
         assert node.type is not None
         assert "union" not in node.type.spelling
         self.__all_structs[getattr(node.type, "spelling", None)] = node.type
 
-    def visit_objc_protocol_decl(self, node: Cursor):
+    def visit_objc_protocol_decl(self, node: Cursor) -> None:
         self.descend(node)
         self._parser.add_protocol(node)
 
-    def visit_function_decl(self, node: Cursor):
+    def visit_function_decl(self, node: Cursor) -> None:
         self._parser.add_function(node)
 
-    def visit_typedef_decl(self, node: Cursor):
+    def visit_typedef_decl(self, node: Cursor) -> None:
         self.descend(node)
 
         typedef_type = node.type
@@ -2209,7 +2209,7 @@ class DefinitionVisitor(AbstractClangVisitor):
                 if pointee_type_decl.spelling.startswith("__"):
                     self._parser.add_cftype(typedef_name, typedef_type)
 
-    def visit_objc_category_decl(self, node: Cursor):
+    def visit_objc_category_decl(self, node: Cursor) -> None:
         self.descend(node)
 
         self._parser.add_category(node)
@@ -2217,11 +2217,11 @@ class DefinitionVisitor(AbstractClangVisitor):
         if node.get_is_informal_protocol():
             self._parser.add_informal_protocol(node)
 
-    def visit_objc_interface_decl(self, node: Cursor):
+    def visit_objc_interface_decl(self, node: Cursor) -> None:
         self.descend(node)
         self._parser.add_class(node)
 
-    def visit_macro_definition(self, node: Cursor):
+    def visit_macro_definition(self, node: Cursor) -> None:
         macro = node.reconstitute_macro()
         file_name = (
             "" if node.extent.start.file is None else node.extent.start.file.name

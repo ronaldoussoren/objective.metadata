@@ -84,9 +84,11 @@ __javascript_comment_re = re.compile(
 )
 
 
-def load_framework_info(filename, verbose=False):
+def load_framework_info(
+    filename: typing.Union[str, os.PathLike[str]], verbose: bool = False
+) -> typing.Any:
     if verbose:
-        print("Reading framework info from: " + filename)
+        print(f"Reading framework info from: {filename!r}")
     with open(filename) as fp:
         data = fp.read()
 

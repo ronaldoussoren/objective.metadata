@@ -321,7 +321,7 @@ def document_callable(
     print("", file=fp)
 
 
-def document_enumerations(fp: IO[str], mergedinfo: FrameworkMetadata):
+def document_enumerations(fp: IO[str], mergedinfo: FrameworkMetadata) -> None:
     """
     Generate documentation for enumeration types and values
 
@@ -367,7 +367,7 @@ def document_enumerations(fp: IO[str], mergedinfo: FrameworkMetadata):
             available(fp, valinfo.availability, indent="   ")
 
 
-def document_externs(fp: IO[str], mergedinfo: FrameworkMetadata):
+def document_externs(fp: IO[str], mergedinfo: FrameworkMetadata) -> None:
     """
     Generate documentation for extern definitions (and related types)
 
@@ -405,7 +405,7 @@ def document_externs(fp: IO[str], mergedinfo: FrameworkMetadata):
             available(fp, valinfo.availability, indent="   ")
 
 
-def document_classes(fp: IO[str], mergedinfo: FrameworkMetadata):
+def document_classes(fp: IO[str], mergedinfo: FrameworkMetadata) -> None:
     """
     Generate documentation for Objecive-C classes.
 
@@ -489,7 +489,7 @@ def generate_documentation(
     module_name: FILE_TYPE,
     exceptions_fn: FILE_TYPE,
     headerinfo_fns: Sequence[FILE_TYPE],
-):
+) -> None:
     print(f"Generate documentation {output_fn!r}")
 
     exceptions = ExceptionData.from_file(exceptions_fn)

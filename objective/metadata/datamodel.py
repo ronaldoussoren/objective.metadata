@@ -773,7 +773,7 @@ class ExceptionData:
         if "cftypes" in data["definitions"]:
             del data["definitions"]["cftypes"]
 
-        return FrameworkMetadata.from_dict(data["definitions"], infer_missing=True)
+        return ExceptionData.from_dict(data["definitions"], infer_missing=True)
 
     def to_file(self, path: FILE_TYPE) -> None:
         data = self.to_dict()

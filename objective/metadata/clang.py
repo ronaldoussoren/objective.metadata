@@ -46,7 +46,7 @@ import typing
 import objc
 
 
-def c_char_p_to_string(value: bytes, fn: typing.Any, args: typing.Any):
+def c_char_p_to_string(value: bytes, fn: typing.Any, args: typing.Any) -> str:
     return value.decode()
 
 
@@ -157,7 +157,7 @@ class _CXString(ctypes.Structure):
         res: "_CXString",
         fn: typing.Any = None,
         args: typing.Tuple[typing.Any, ...] = None,
-    ):
+    ) -> str:
         assert isinstance(res, _CXString)
         return conf.lib.clang_getCString(res)
 
@@ -184,7 +184,9 @@ class SourceLocation(ctypes.Structure):
         return self._data
 
     @staticmethod
-    def from_position(tu: "TranslationUnit", file: str, line: int, column: int):
+    def from_position(
+        tu: "TranslationUnit", file: str, line: int, column: int
+    ) -> "SourceLocation":
         """
         Retrieve the source location associated with a given file/line/column in
         a particular translation unit.
@@ -192,7 +194,7 @@ class SourceLocation(ctypes.Structure):
         return conf.lib.clang_getLocation(tu, file, line, column)
 
     @staticmethod
-    def from_offset(tu: "TranslationUnit", file: str, offset: int):
+    def from_offset(tu: "TranslationUnit", file: str, offset: int) -> "SourceLocation":
         """Retrieve a SourceLocation from a given character offset.
 
         tu -- TranslationUnit file belongs to
@@ -2842,13 +2844,13 @@ class Type(ctypes.Structure):
         """Retrieve the spelling of this Type."""
         return conf.lib.clang_getTypeSpelling(self)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: typing.Any) -> bool:
         if type(other) != type(self):
             return False
 
         return conf.lib.clang_equalTypes(self, other)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other: typing.Any) -> bool:
         return not self.__eq__(other)
 
     @property
@@ -4367,7 +4369,7 @@ class Config(object):
     loaded: bool = False
 
     @classmethod
-    def set_library_path(cls, path: typing.Union[str, os.PathLike[str]]):
+    def set_library_path(cls, path: typing.Union[str, os.PathLike[str]]) -> None:
         """Set the path in which to search for libclang"""
         if cls.loaded:
             raise Exception(
@@ -4378,7 +4380,7 @@ class Config(object):
         cls.library_path = os.fspath(path)
 
     @classmethod
-    def set_library_file(cls, filename: typing.Union[str, os.PathLike[str]]):
+    def set_library_file(cls, filename: typing.Union[str, os.PathLike[str]]) -> None:
         """Set the exact location of libclang"""
         if cls.loaded:
             raise Exception(
@@ -4389,7 +4391,7 @@ class Config(object):
         cls.library_file = os.fspath(filename)
 
     @classmethod
-    def set_compatibility_check(cls, check_status: bool):
+    def set_compatibility_check(cls, check_status: bool) -> None:
         """ Perform compatibility check when loading libclang
 
         The python bindings are only tested and evaluated with the version of
@@ -4454,7 +4456,7 @@ class Config(object):
 
         return library
 
-    def function_exists(self, name: str):
+    def function_exists(self, name: str) -> bool:
         try:
             getattr(self.lib, name)
         except AttributeError:

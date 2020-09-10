@@ -6,9 +6,27 @@ information.
 Original topological sort code written by Ofer Faigon
 (www.bitformation.com) and used with permission
 """
+import dataclasses
+from typing import Dict, Generic, Hashable, List, Optional, Sequence, Tuple, TypeVar
+
+T = TypeVar("T", bound=Hashable)
 
 
-def topological_sort(items, partial_order):
+@dataclasses.dataclass
+class GraphNode(Generic[T]):
+    # Count of incoming arcs
+    incoming: int
+
+    # outgoing arcs
+    outgoing: List[T]
+
+
+GRAPH_TYPE = Dict[T, GraphNode[T]]
+
+
+def topological_sort(
+    items: Sequence[T], partial_order: Sequence[Tuple[T, T]]
+) -> Optional[List[T]]:
     """
     Perform topological sort.
     items is a list of items to be sorted.
@@ -18,17 +36,17 @@ def topological_sort(items, partial_order):
     if partial_order contains a loop.
     """
 
-    def add_node(graph, node):
+    def add_node(graph: GRAPH_TYPE, node: T) -> None:
         """Add a node to the graph if not already exists."""
         if node not in graph:
-            graph[node] = [0]  # 0 = number of arcs coming into this node.
+            graph[node] = GraphNode(incoming=0, outgoing=[])
 
-    def add_arc(graph, fromnode, tonode):
+    def add_arc(graph: GRAPH_TYPE, fromnode: T, tonode: T) -> None:
         """Add an arc to a graph. Can create multiple arcs.
            The end nodes must already exist."""
-        graph[fromnode].append(tonode)
+        graph[fromnode].outgoing.append(tonode)
         # Update the count of incoming arcs in tonode.
-        graph[tonode][0] += 1
+        graph[tonode].incoming += 1
 
     # step 1 - create a directed graph with an arc a->b for each input
     # pair (a,b).
@@ -42,20 +60,20 @@ def topological_sort(items, partial_order):
     # Note that our representation does not contain reference loops to
     # cause GC problems even when the represented graph contains loops,
     # because we keep the node names rather than references to the nodes.
-    graph = {}
+    graph: GRAPH_TYPE[T] = {}
     for v in items:
         add_node(graph, v)
     for a, b in partial_order:
         add_arc(graph, a, b)
 
     # Step 2 - find all roots (nodes with zero incoming arcs).
-    roots = [node for (node, nodeinfo) in graph.items() if nodeinfo[0] == 0]
+    roots = [node for (node, nodeinfo) in graph.items() if nodeinfo.incoming == 0]
 
     # step 3 - repeatedly emit a root and remove it from the graph. Removing
     # a node may convert some of the node's direct children into roots.
     # Whenever that happens, we append the new roots to the list of
     # current roots.
-    sorted_items = []
+    sorted_items: List[T] = []
     while len(roots) != 0:
         # If len(roots) is always 1 when we get here, it means that
         # the input describes a complete ordering and there is only
@@ -68,9 +86,9 @@ def topological_sort(items, partial_order):
         roots.sort(reverse=True)
         root = roots.pop()
         sorted_items.append(root)
-        for child in graph[root][1:]:
-            graph[child][0] = graph[child][0] - 1
-            if graph[child][0] == 0:
+        for child in graph[root].outgoing:
+            graph[child].incoming -= 1
+            if graph[child].incoming == 0:
                 roots.append(child)
         del graph[root]
     if len(graph.items()) != 0:
