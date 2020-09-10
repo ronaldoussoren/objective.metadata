@@ -437,6 +437,7 @@ def document_classes(fp: IO[str], mergedinfo: FrameworkMetadata) -> None:
             partial_order.append((classinfo.super, cls))
 
     class_order = topological_sort(class_names, partial_order)
+    assert class_order is not None
 
     for cls in class_order:
         classinfo = mergedinfo.classes[cls]
@@ -498,7 +499,12 @@ def generate_documentation(
     # TODO: Introduce function to merge headerinfo and exceptions, used here
     #       and by the compiler
     mergedinfo = merge_framework_metadata(exceptions, headerinfo)
-    mergedinfo = headerinfo[0]
+    # mergedinfo = headerinfo[0]
+
+    import pprint
+
+    pprint.pprint(mergedinfo.literals)
+    raise SystemExit(1)
 
     with open(output_fn, "w") as fp:
         header(fp, f":mod:`{module_name}` -- Bindings for {module_name}", level=L1)

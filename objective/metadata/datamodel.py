@@ -616,6 +616,9 @@ class LiteralInfo:
     # False if this "str" represents a byte literal
     unicode: Optional[bool] = False
 
+    # For exception information: ignore this declaration
+    ignore: bool = False
+
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
@@ -739,9 +742,9 @@ class ExceptionData:
     enum_type: Dict[str, EnumTypeInfo] = field(default_factory=dict)
     enum: Dict[str, EnumInfo] = field(default_factory=dict)
     # structs: Dict[str, StructInfo] = field(default_factory=dict)
-    # externs: Dict[str, ExternInfo] = field(default_factory=dict)
+    externs: Dict[str, ExternInfo] = field(default_factory=dict)
     # cftypes: Dict[str, CFTypeInfo] = field(default_factory=dict)
-    # literals: Dict[str, LiteralInfo] = field(default_factory=dict)
+    literals: Dict[str, LiteralInfo] = field(default_factory=dict)
     # formal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
     # informal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
     # classes: Dict[str, ClassInfo] = field(default_factory=dict)
