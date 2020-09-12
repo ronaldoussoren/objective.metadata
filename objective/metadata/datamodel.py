@@ -31,14 +31,32 @@ from . import util
 
 FILE_TYPE = Union[str, os.PathLike[str]]
 
+
+def bytes_decode(value: Union[None, str, List[str]]) -> Optional[bytes]:
+    if isinstance(value, list):
+        # Backward compatibility with existing metadata exceptions:
+        # [ 32-bit, 64-bit], use only 64-bit value.
+        #
+        # To be removed when PyObjC is converted to the new tooling.
+        value = value[-1]
+
+    elif value is None:
+        return None
+
+    return value.encode("ascii")
+
+
 bytes_config = config(
     encoder=lambda value: None if value is None else value.decode("ascii"),
-    decoder=lambda value: None if value is None else value.encode("ascii"),
+    decoder=bytes_decode,
 )
 
 argdict_config = config(
-    encoder=lambda value: {str(k) for k, v in value.items()},
-    decoder=lambda value: {int(k) for k, v in value.items()},
+    encoder=lambda value: None if value is None else {str(k) for k, v in value.items()},
+    decoder=lambda value: None if value is None else {int(k) for k, v in value.items()},
+    # The field_name in existing metadata exception files needs to be changed,
+    # the alternative name will be removed when PyObjC is converted to the new
+    # tooling.
     field_name="arguments",
 )
 
@@ -983,10 +1001,10 @@ class ExceptionData:
     aliases: Dict[str, AliasInfo] = field(default_factory=dict)
     expressions: Dict[str, ExpressionInfo] = field(default_factory=dict)
     func_macros: Dict[str, FunctionMacroExceptionInfo] = field(default_factory=dict)
-    # functions: Dict[str, FunctionExceptionInfo] = field(default_factory=dict)
+    functions: Dict[str, FunctionExceptionInfo] = field(default_factory=dict)
 
     @classmethod
-    def from_file(cls, path: FILE_TYPE) -> "FrameworkMetadata":
+    def from_file(cls, path: FILE_TYPE) -> "ExceptionData":
         with open(path, "r") as stream:
             raw_data = stream.read()
 
@@ -997,8 +1015,6 @@ class ExceptionData:
         data = json.loads(raw_data)
         del raw_data
 
-        if "functions" in data["definitions"]:
-            del data["definitions"]["functions"]
         if "formal_protocols" in data["definitions"]:
             del data["definitions"]["formal_protocols"]
         if "informal_protocols" in data["definitions"]:
@@ -1021,9 +1037,7 @@ class ExceptionData:
         # The declaration below teach the typechecker about these methods.
 
         @classmethod
-        def from_dict(
-            cls, value: dict, infer_missing: bool = False
-        ) -> "FrameworkMetadata":
+        def from_dict(cls, value: dict, infer_missing: bool = False) -> "ExceptionData":
             ...
 
         def to_dict(self) -> dict:

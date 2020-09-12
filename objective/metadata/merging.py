@@ -359,7 +359,7 @@ def merge_func_macros(
 
 
 def merge_framework_metadata(
-    exception_info: datamodel.FrameworkMetadata,
+    exception_info: datamodel.ExceptionData,
     framework_infos: Sequence[datamodel.FrameworkMetadata],
 ) -> datamodel.FrameworkMetadata:
     """
