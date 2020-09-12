@@ -20,6 +20,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    TypedDict,
     TypeVar,
     Union,
 )
@@ -33,6 +34,12 @@ FILE_TYPE = Union[str, os.PathLike[str]]
 bytes_config = config(
     encoder=lambda value: None if value is None else value.decode("ascii"),
     decoder=lambda value: None if value is None else value.encode("ascii"),
+)
+
+argdict_config = config(
+    encoder=lambda value: {str(k) for k, v in value.items()},
+    decoder=lambda value: {int(k) for k, v in value.items()},
+    field_name="arguments",
 )
 
 T = TypeVar("T")
@@ -151,7 +158,7 @@ class ExternInfo:
     """ Information about C global variable (constants) """
 
     # Type encoding (as used by PyObjC)
-    typestr: bytes = field(metadata=bytes_config)
+    typestr: Union[bytes, MergedInfo[bytes]] = field(metadata=bytes_config)
 
     # Name of the type associated with *typestr*, will
     # by used when there is a better type name than
@@ -289,7 +296,7 @@ class CallbackInfo:
     retval: CallbackArgInfo
 
     # Information about all arguments
-    args: List[CallbackArgInfo]
+    args: List[CallbackArgInfo] = field(metadata=config(field_name="arguments"))
 
     # Is this a variadic function?
     variadic: bool = False
@@ -380,6 +387,78 @@ class ArgInfo:
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
+class ArgExceptionInfo:
+    """ Information about a function/method argument """
+
+    # Can there be a shared superclass with ArgInfo?
+
+    # Type encoding (as used by PyObjC)
+    typestr: Optional[bytes] = field(metadata=bytes_config, default=None)
+
+    # Name of the argument
+    name: Optional[str] = None
+
+    # Name of the type associated with *typestr*, will
+    # by used when there is a better type name than
+    # the default.
+    type_name: Optional[str] = None
+
+    # For pointer arguments (_C_PTR) mark if the data is
+    # passed in (_C_IN), out (_C_OUT) or both (_C_INOUT).
+    type_modifier: Optional[bytes] = field(metadata=bytes_config, default=None)
+
+    # For pointer (_C_PTR) or object (_C_ID) arguments
+    # tell if NULL is an acceptable value for the argument in C.
+    null_accepted: Optional[bool] = None
+
+    # If true this argument is a printf format string for
+    # variadic callable.
+    printf_format: bool = False
+
+    # Used with pointers to _C_ID: If *true* a value
+    # returned through this argument is already retained
+    # (caller has to call -release when it no longer
+    # needds the value).
+    already_retained: Optional[bool] = None
+
+    # Used with pointers to CoreFoundation objects.
+    # If *true* a value returned through this argument is
+    # already retained # (caller has to call CFRelease when
+    # it no longer needds the value).
+    already_cfretained: Optional[bool] = None
+
+    # Signature information for a block or function argument
+    callable: Optional[CallbackInfo] = None
+
+    # True if the callable is stored by the called API
+    callable_retained: Optional[bool] = None
+
+    # If the argument is a C array with the size in another
+    # argument this option describes which argument contains
+    # the size.
+    # - value: The argument containing the size
+    # - (in_value, out_value); The *in_value*-th argument
+    #   contains the size of the array before the call, the
+    #   *out_value* contains the (effective) size after the call.
+    c_array_length_in_arg: Optional[Union[int, Tuple[int, int]]] = None
+
+    # If true the argument is a C array (with a length specified by one
+    # of the other options). The effective length of the array on return
+    # is in the return value of the function/method.
+    c_array_length_in_result: Optional[bool] = None
+
+    # If true the argument is a C-array for which the
+    # required size is either not known or cannot be described
+    # by the metadata system.
+    c_array_of_variable_length: Optional[bool] = None
+
+    # If true the argument is a C-array with the type-appropriated
+    # NUL-value at the end. Python users won't use the delimiter.
+    c_array_delimited_by_null: Optional[bool] = None
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass(frozen=True)
 class ReturnInfo:
     """ Information about a function/method return value """
 
@@ -425,6 +504,43 @@ class ReturnInfo:
 
 
 @dataclass_json(undefined=Undefined.RAISE)
+@dataclass(frozen=True)
+class ReturnExceptionInfo:
+    """ Information about a function/method return value """
+
+    # Type encoding (as used by PyObjC)
+    typestr: Optional[bytes] = field(metadata=bytes_config, default=None)
+
+    # For pointer (_C_PTR) or object (_C_ID) arguments
+    # tell if NULL is an acceptable value for the argument in C.
+    null_accepted: Optional[bool] = None
+
+    # Used with pointers to _C_ID: If *true* a value
+    # returned through this argument is already retained
+    # (caller has to call -release when it no longer
+    # needds the value).
+    already_retained: Optional[bool] = False
+
+    # Used with pointers to CoreFoundation objects.
+    # If *true* a value returned through this argument is
+    # already retained # (caller has to call CFRelease when
+    # it no longer needds the value).
+    already_cfretained: Optional[bool] = False
+
+    # Signature information for a block or function argument
+    callable: Optional[CallbackInfo] = None
+
+    # If true the argument is a C-array for which the
+    # required size is either not known or cannot be described
+    # by the metadata system.
+    c_array_of_variable_length: Optional[bool] = None
+
+    # If true the argument is a C-array with the type-appropriated
+    # NUL-value at the end. Python users won't use the delimiter.
+    c_array_delimited_by_null: Optional[bool] = None
+
+
+@dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class FunctionInfo:
     """ Information about a function"""
@@ -444,6 +560,32 @@ class FunctionInfo:
     # Argument index for a variadic function
     # that is the printf_format (if any)
     printf_format: Optional[int] = None
+
+    # API Availability
+    availability: Optional[AvailabilityInfo] = None
+
+    # To be removed
+    ignore: bool = False
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass
+class FunctionExceptionInfo:
+    """ Exception data for a function """
+
+    # Information about the return value
+    retval: Optional[ReturnExceptionInfo] = None
+
+    # Information about all arguments
+    args: Optional[Dict[int, ArgExceptionInfo]] = field(
+        default=None, metadata=argdict_config
+    )
+
+    # Is this an inline function?
+    inline: bool = False
+
+    # Is this a variadic method
+    variadic: bool = False
 
     # API Availability
     availability: Optional[AvailabilityInfo] = None
@@ -485,6 +627,41 @@ class MethodInfo:
     # (*None* for methods in the main class
     # definition)
     category: Optional[str] = None
+
+    # API Availability
+    availability: Optional[AvailabilityInfo] = None
+
+    # Used to mark APIs as ignored in exception
+    # files.
+    # To be removed
+    ignore: bool = False
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass
+class MethodExceptionInfo:
+    """ Override Information about a method in an ObjC class or protocol """
+
+    # Selector for the method
+    selector: str
+
+    # Is this a class method?
+    class_method: bool
+
+    # Information about the return value
+    retval: Optional[ReturnExceptionInfo] = None
+
+    # Information about all arguments
+    args: Optional[Dict[int, ArgExceptionInfo]] = field(
+        default=None, metadata=argdict_config
+    )
+
+    # Is this a variadic method
+    variadic: Optional[bool] = None
+
+    # Argument index for a variadic function
+    # that is the printf_format (if any)
+    printf_format: Optional[int] = None
 
     # API Availability
     availability: Optional[AvailabilityInfo] = None
@@ -587,6 +764,31 @@ class ClassInfo:
 
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
+class ClassExceptionInfo:
+    """ Objective-C class """
+
+    # Superclass for this class.
+    # This will be *None* in two cases:
+    # - Root classes (NSObject/NSProxy)
+    # - Categories on classes defined in another framework
+    super: Optional[str]
+
+    # List of names for protocols this protocol
+    # implements (subclassing for protocols)
+    implements: List[str] = field(metadata=config(field_name="protocols"))
+
+    # List of methods in this protocol
+    methods: List[MethodExceptionInfo] = field(default_factory=list)
+
+    # List of properties in this protocol
+    properties: List[PropertyInfo] = field(default_factory=list)
+
+    # API Availability
+    availability: Optional[AvailabilityInfo] = None
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass
 class CFTypeInfo:
     """ Information about a CoreFoundation type """
 
@@ -611,7 +813,7 @@ class LiteralInfo:
     """ Named literals other than enums """
 
     # Value of the literal
-    value: Union[None, int, float, str]
+    value: Union[None, int, float, str, MergedInfo[Union[None, int, float, str]]]
 
     # False if this "str" represents a byte literal
     unicode: Optional[bool] = False
@@ -669,9 +871,39 @@ class FunctionMacroInfo:
     # API Availability
     availability: Optional[AvailabilityInfo] = None
 
+    # To be removed
+    ignore: bool = False
+
+
+class FUNCTION_MACRO_UPDATE_DICT(TypedDict, total=False):
+    definition: str
+    availability: AvailabilityInfo
+
+
+@dataclass_json(undefined=Undefined.RAISE)
+@dataclass
+class FunctionMacroExceptionInfo:
+    """
+    A C define with parameters that can be evaluated as a Python function
+    """
+
+    # String that evaluates to the function
+    definition: Optional[str]
+
+    # API Availability
+    availability: Optional[AvailabilityInfo] = None
+
     # Used to mark APIs as ignored in exception
     # files.
     ignore: bool = False
+
+    def exception_info(self) -> FUNCTION_MACRO_UPDATE_DICT:
+        result: FUNCTION_MACRO_UPDATE_DICT = {}
+        if self.definition is not None:
+            result["definition"] = self.definition
+        if self.availability is not None:
+            result["availability"] = self.availability
+        return result
 
 
 @dataclass_json(undefined=Undefined.RAISE)
@@ -747,11 +979,11 @@ class ExceptionData:
     literals: Dict[str, LiteralInfo] = field(default_factory=dict)
     # formal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
     # informal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
-    # classes: Dict[str, ClassInfo] = field(default_factory=dict)
-    # aliases: Dict[str, AliasInfo] = field(default_factory=dict)
-    # expressions: Dict[str, ExpressionInfo] = field(default_factory=dict)
-    # func_macros: Dict[str, FunctionMacroInfo] = field(default_factory=dict)
-    # functions: Dict[str, FunctionInfo] = field(default_factory=dict)
+    # classes: Dict[str, ClassExceptionInfo] = field(default_factory=dict)
+    aliases: Dict[str, AliasInfo] = field(default_factory=dict)
+    expressions: Dict[str, ExpressionInfo] = field(default_factory=dict)
+    func_macros: Dict[str, FunctionMacroExceptionInfo] = field(default_factory=dict)
+    # functions: Dict[str, FunctionExceptionInfo] = field(default_factory=dict)
 
     @classmethod
     def from_file(cls, path: FILE_TYPE) -> "FrameworkMetadata":
@@ -765,8 +997,6 @@ class ExceptionData:
         data = json.loads(raw_data)
         del raw_data
 
-        if "classes" in data["definitions"]:
-            del data["definitions"]["classes"]
         if "functions" in data["definitions"]:
             del data["definitions"]["functions"]
         if "formal_protocols" in data["definitions"]:

@@ -503,7 +503,7 @@ def generate_documentation(
 
     import pprint
 
-    pprint.pprint(mergedinfo.literals)
+    pprint.pprint(mergedinfo.func_macros)
     raise SystemExit(1)
 
     with open(output_fn, "w") as fp:

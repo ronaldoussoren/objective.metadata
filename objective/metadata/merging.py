@@ -243,6 +243,121 @@ def merge_literals(
     return result
 
 
+def merge_aliases(
+    exceptions: Dict[str, datamodel.AliasInfo],
+    infos: Sequence[Tuple[str, Dict[str, datamodel.AliasInfo]]],
+) -> Dict[str, datamodel.AliasInfo]:
+    """
+    Merge information about aliases types
+
+    This just uses the latest information found for every alias, with overrides from
+    exceptions.  Primary reason for this is that aliases tend to be used for renamed
+    constants.
+    """
+
+    result: Dict[str, datamodel.AliasInfo] = {}
+
+    for _arch, info in reversed(infos):
+        for key, value in info.items():
+            if key in result:
+                continue
+
+            if key in exceptions:
+                if exceptions[key].ignore:
+                    continue
+
+                value = replace(
+                    value,
+                    **{
+                        k: v
+                        for k, v in exceptions[key].to_dict().items()
+                        if v is not None
+                    },
+                )
+
+            result[key] = value
+
+    return result
+
+
+def merge_expressions(
+    exceptions: Dict[str, datamodel.ExpressionInfo],
+    infos: Sequence[Tuple[str, Dict[str, datamodel.ExpressionInfo]]],
+) -> Dict[str, datamodel.ExpressionInfo]:
+    """
+    Merge information about aliases types
+
+    This just uses the latest information found for every alias, with overrides from
+    exceptions.  Primary reason for this is that aliases tend to be used for renamed
+    constants.
+    """
+
+    result: Dict[str, datamodel.ExpressionInfo] = {}
+
+    for _arch, info in reversed(infos):
+        for key, value in info.items():
+            if key in result:
+
+                if key not in exceptions or exceptions[key].expression is None:
+                    # The expection is that expressions are the same in the various
+                    # scans, check this.
+                    assert result[key].expression == value.expression
+
+                continue
+
+            if key in exceptions:
+                if exceptions[key].ignore:
+                    continue
+
+                value = replace(
+                    value,
+                    **{
+                        k: v
+                        for k, v in exceptions[key].to_dict().items()
+                        if v is not None
+                    },
+                )
+
+            result[key] = value
+
+    return result
+
+
+def merge_func_macros(
+    exceptions: Dict[str, datamodel.FunctionMacroExceptionInfo],
+    infos: Sequence[Tuple[str, Dict[str, datamodel.FunctionMacroInfo]]],
+) -> Dict[str, datamodel.FunctionMacroInfo]:
+    """
+    Merge information about function macros
+
+    This just uses the latest information found for every alias, with overrides from
+    exceptions.
+    """
+
+    result: Dict[str, datamodel.FunctionMacroInfo] = {}
+
+    for _arch, info in reversed(infos):
+        for key, value in info.items():
+            if key in result:
+
+                if key not in exceptions or exceptions[key].definition is None:
+                    # The expection is that expressions are the same in the various
+                    # scans, check this.
+                    assert result[key].definition == value.definition
+
+                continue
+
+            if key in exceptions:
+                if exceptions[key].ignore:
+                    continue
+
+                value = replace(value, **exceptions[key].exception_info())
+
+            result[key] = value
+
+    return result
+
+
 def merge_framework_metadata(
     exception_info: datamodel.FrameworkMetadata,
     framework_infos: Sequence[datamodel.FrameworkMetadata],
@@ -278,7 +393,7 @@ def merge_framework_metadata(
         ),
     )
 
-    # strudts
+    # structs
     ...
 
     # externs
@@ -307,6 +422,55 @@ def merge_framework_metadata(
             ],
         ),
     )
+
+    # formal_protocols
+    ...
+
+    # informal_protocols
+    ...
+
+    # classes
+    ...
+
+    # aliases
+    result = replace(
+        result,
+        aliases=merge_aliases(
+            exception_info.aliases,
+            [
+                (next(iter(info.architectures)), info.aliases)
+                for info in framework_infos
+            ],
+        ),
+    )
+
+    # expressions
+    result = replace(
+        result,
+        aliases=merge_expressions(
+            exception_info.expressions,
+            [
+                (next(iter(info.architectures)), info.expressions)
+                for info in framework_infos
+            ],
+        ),
+    )
+
+    # func_macros
+    result = replace(
+        result,
+        aliases=merge_func_macros(
+            exception_info.func_macros,
+            [
+                (next(iter(info.architectures)), info.func_macros)
+                for info in framework_infos
+            ],
+        ),
+    )
+
+    # functions
+    ...
+
     return result
 
 
@@ -318,8 +482,6 @@ def merge_framework_metadata(
     formal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
     informal_protocols: Dict[str, ProtocolInfo] = field(default_factory=dict)
     classes: Dict[str, ClassInfo] = field(default_factory=dict)
-    aliases: Dict[str, AliasInfo] = field(default_factory=dict)
-    expressions: Dict[str, ExpressionInfo] = field(default_factory=dict)
-    func_macros: Dict[str, FunctionMacroInfo] = field(default_factory=dict)
+
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
 """
