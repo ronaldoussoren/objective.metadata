@@ -834,6 +834,11 @@ class FrameworkParser(object):
                 superclass = child.referenced
                 superclass_name = superclass.spelling
 
+            final = False
+            for child in node.get_children():
+                if child.kind == CursorKind.OBJCSUBCLASSINGRESTRICTED_ATTR:
+                    final = True
+
             self.meta.classes[node.spelling] = class_info = ClassInfo(
                 super=superclass_name,
                 implements=[],
@@ -841,6 +846,7 @@ class FrameworkParser(object):
                 categories=util.sorted_set(),
                 properties=[],
                 availability=self._get_availability(node),
+                final=final,
             )
 
         for proto_ref in node.get_adopted_protocol_nodes():

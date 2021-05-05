@@ -1301,7 +1301,10 @@ def compile_metadata(output_fn, exceptions_fn, headerinfo_fns):
     into a file than is usable for the metadata support in
     pyobjc 2.4 or later.
     """
-    exceptions = load_framework_info(exceptions_fn)
+    try:
+        exceptions = load_framework_info(exceptions_fn)
+    except FileNotFoundError:
+        exceptions = {"definitions": {}}
     headerinfo = [load_framework_info(fn) for fn in headerinfo_fns]
     with open(output_fn, "w") as fp:
         fp.write(HEADER % {"timestamp": time.ctime()})

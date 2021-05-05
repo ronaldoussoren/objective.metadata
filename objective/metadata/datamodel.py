@@ -776,6 +776,8 @@ class ClassInfo:
     # API Availability
     availability: Optional[AvailabilityInfo] = None
 
+    final: bool = False
+
     # Categories defined on this class
     categories: Set[str] = field(default_factory=util.sorted_set)
 
