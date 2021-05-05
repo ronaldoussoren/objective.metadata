@@ -452,6 +452,9 @@ def document_classes(fp: IO[str], mergedinfo: FrameworkMetadata) -> None:
             # framework, I haven't decided yet how to get the correct
             # reference here.
             print(f"   Subclass of :class:`{classinfo.super}`.", file=fp)
+
+        if classinfo.final:
+            print("   This class cannot be subclassed", file=fp)
         print("", file=fp)
         available(fp, classinfo.availability, indent="   ")
 
