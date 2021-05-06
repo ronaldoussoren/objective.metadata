@@ -27,6 +27,15 @@ def macho_archs(filename: typing.Union[os.PathLike[str], str]) -> typing.Set[str
     return result
 
 
+def path_for_default_sdk() -> str:
+    with open(os.devnull, "a") as dn:
+        out = subprocess.check_output(
+            ["xcodebuild", "-version", "-sdk", "macosx", "Path"],
+            stderr=dn,
+        ).decode()
+        return out.strip()
+
+
 def path_for_sdk_version(version: str) -> str:
     with open(os.devnull, "a") as dn:
         out = subprocess.check_output(

@@ -84,7 +84,9 @@ class FrameworkParser(object):
         only_headers: typing.Optional[typing.Sequence[str]] = None,
         min_deploy: typing.Optional[str] = None,
         verbose: bool = False,
+        cflags: typing.Optional[typing.List[str]] = None,
     ):
+        self.cflags = cflags if cflags is not None else []
         self.verbose = verbose
         self.framework = framework
         self.link_framework = (
@@ -133,7 +135,7 @@ class FrameworkParser(object):
         code_string = self.__includes_string()
 
         unsaved_files = [(fake_path, code_string)]
-        args = ["-arch", self.arch, "-isysroot", self.sdk]
+        args = ["-arch", self.arch, "-isysroot", self.sdk] + self.cflags
 
         # Handle min OS version deployment setting
         if self.min_deploy:
