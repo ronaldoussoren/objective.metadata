@@ -85,7 +85,7 @@ class MergedInfo(Generic[T]):
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class AvailabilityInfo:
-    """ Information about API availability """
+    """Information about API availability"""
 
     # API is unavailable for some reason
     unavailable: Optional[bool] = None
@@ -109,13 +109,16 @@ class AvailabilityInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class EnumTypeInfo:
-    """ Information about a C enum type """
+    """Information about a C enum type"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
 
     # API Availability
     availability: Optional[AvailabilityInfo] = None
+
+    # True if this is a flag enum
+    flags: bool = False
 
     # Used to mark APIs as ignored in exception
     # files.
@@ -125,7 +128,7 @@ class EnumTypeInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class EnumInfo:
-    """ Information about individual enum labels """
+    """Information about individual enum labels"""
 
     # Value for this enum label
     value: Union[int, MergedInfo[int]]
@@ -146,7 +149,7 @@ class EnumInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class StructInfo:
-    """ Information about a C structure """
+    """Information about a C structure"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -173,7 +176,7 @@ class StructInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ExternInfo:
-    """ Information about C global variable (constants) """
+    """Information about C global variable (constants)"""
 
     # Type encoding (as used by PyObjC)
     typestr: Union[bytes, MergedInfo[bytes]] = field(metadata=bytes_config)
@@ -212,7 +215,7 @@ class ExternInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class CallbackArgInfo2:
-    """ Information about the argument of a callback to a callback """
+    """Information about the argument of a callback to a callback"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -244,7 +247,7 @@ class CallbackArgInfo2:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class CallbackInfo2:
-    """ Information about a callback signature for a callback """
+    """Information about a callback signature for a callback"""
 
     # Information about the return value
     retval: Optional[CallbackArgInfo2]
@@ -268,7 +271,7 @@ class CallbackInfo2:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class CallbackArgInfo:
-    """ Information about the argument of a callback """
+    """Information about the argument of a callback"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -308,7 +311,7 @@ class CallbackArgInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class CallbackInfo:
-    """ Information about a callback signature """
+    """Information about a callback signature"""
 
     # Information about the return value
     retval: CallbackArgInfo
@@ -332,7 +335,7 @@ class CallbackInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ArgInfo:
-    """ Information about a function/method argument """
+    """Information about a function/method argument"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -406,7 +409,7 @@ class ArgInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ArgExceptionInfo:
-    """ Information about a function/method argument """
+    """Information about a function/method argument"""
 
     # Can there be a shared superclass with ArgInfo?
 
@@ -478,7 +481,7 @@ class ArgExceptionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ReturnInfo:
-    """ Information about a function/method return value """
+    """Information about a function/method return value"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -524,7 +527,7 @@ class ReturnInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass(frozen=True)
 class ReturnExceptionInfo:
-    """ Information about a function/method return value """
+    """Information about a function/method return value"""
 
     # Type encoding (as used by PyObjC)
     typestr: Optional[bytes] = field(metadata=bytes_config, default=None)
@@ -561,7 +564,7 @@ class ReturnExceptionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class FunctionInfo:
-    """ Information about a function"""
+    """Information about a function"""
 
     # Information about the return value
     retval: ReturnInfo
@@ -589,7 +592,7 @@ class FunctionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class FunctionExceptionInfo:
-    """ Exception data for a function """
+    """Exception data for a function"""
 
     # Information about the return value
     retval: Optional[ReturnExceptionInfo] = None
@@ -616,7 +619,7 @@ class FunctionExceptionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class MethodInfo:
-    """ Information about a method in an ObjC class or protocol """
+    """Information about a method in an ObjC class or protocol"""
 
     # Selector for the method
     selector: str
@@ -658,7 +661,7 @@ class MethodInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class MethodExceptionInfo:
-    """ Override Information about a method in an ObjC class or protocol """
+    """Override Information about a method in an ObjC class or protocol"""
 
     # Selector for the method
     selector: str
@@ -692,7 +695,7 @@ class MethodExceptionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class PropertyInfo:
-    """ class property """
+    """class property"""
 
     # Name of the property
     name: str
@@ -736,7 +739,7 @@ class PropertyInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class ProtocolInfo:
-    """ Objective-C protocol, or deduced informal protocol (category) """
+    """Objective-C protocol, or deduced informal protocol (category)"""
 
     # List of names for protocols this protocol
     # implements (subclassing for protocols)
@@ -755,7 +758,7 @@ class ProtocolInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class ClassInfo:
-    """ Objective-C class """
+    """Objective-C class"""
 
     # Superclass for this class.
     # This will be *None* in two cases:
@@ -785,7 +788,7 @@ class ClassInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class ClassExceptionInfo:
-    """ Objective-C class """
+    """Objective-C class"""
 
     # Superclass for this class.
     # This will be *None* in two cases:
@@ -810,7 +813,7 @@ class ClassExceptionInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class CFTypeInfo:
-    """ Information about a CoreFoundation type """
+    """Information about a CoreFoundation type"""
 
     # Type encoding (as used by PyObjC)
     typestr: bytes = field(metadata=bytes_config)
@@ -830,7 +833,7 @@ class CFTypeInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class LiteralInfo:
-    """ Named literals other than enums """
+    """Named literals other than enums"""
 
     # Value of the literal
     value: Union[None, int, float, str, MergedInfo[Union[None, int, float, str]]]
@@ -845,7 +848,7 @@ class LiteralInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class AliasInfo:
-    """ Name that aliases another name """
+    """Name that aliases another name"""
 
     # What this name is an alias for
     alias: str
@@ -865,7 +868,7 @@ class AliasInfo:
 @dataclass_json(undefined=Undefined.RAISE)
 @dataclass
 class ExpressionInfo:
-    """ A C define that evaluates to a constant expression """
+    """A C define that evaluates to a constant expression"""
 
     # The expression
     expression: str

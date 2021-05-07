@@ -372,9 +372,11 @@ class FrameworkParser(object):
     # assert isinstance(typedef, str)
     # self.typedefs[name] = typedef
 
-    def add_enumeration(self, node: Cursor) -> None:
+    def add_enumeration(self, node: Cursor, typedef_name: str = "") -> None:
         # Need to do something with availability information
-        if node.spelling is None or node.spelling == "":
+        if typedef_name:
+            name = typedef_name
+        elif node.spelling is None or node.spelling == "":
             name = "<anon>"
         else:
             name = node.spelling
@@ -388,8 +390,10 @@ class FrameworkParser(object):
         elif node.kind == CursorKind.ENUM_DECL:
             typestr = self.__get_typestr(node)[0]
             assert typestr is not None
-            self.meta.enum_type[node.spelling] = EnumTypeInfo(
-                typestr=typestr, availability=self._get_availability(node)
+            self.meta.enum_type[typedef_name or node.spelling] = EnumTypeInfo(
+                typestr=typestr,
+                availability=self._get_availability(node),
+                flags=bool(node.has_child_of_kind(CursorKind.FLAGENUM_ATTR)),
             )
             for val in node.get_children():
                 if val.kind != CursorKind.ENUM_CONSTANT_DECL:
@@ -399,7 +403,7 @@ class FrameworkParser(object):
                 val_name = val.spelling
                 self.meta.enum[val_name] = EnumInfo(
                     value=val.enum_value,
-                    enum_type=node.spelling,
+                    enum_type=typedef_name or node.spelling,
                     availability=self._get_availability(val),
                 )
 
@@ -836,10 +840,9 @@ class FrameworkParser(object):
                 superclass = child.referenced
                 superclass_name = superclass.spelling
 
-            final = False
-            for child in node.get_children():
-                if child.kind == CursorKind.OBJCSUBCLASSINGRESTRICTED_ATTR:
-                    final = True
+            final = bool(
+                node.has_child_of_kind(CursorKind.OBJCSUBCLASSINGRESTRICTED_ATTR)
+            )
 
             self.meta.classes[node.spelling] = class_info = ClassInfo(
                 super=superclass_name,
@@ -2168,12 +2171,18 @@ class DefinitionVisitor(AbstractClangVisitor):
         self._parser.add_function(node)
 
     def visit_typedef_decl(self, node: Cursor) -> None:
-        self.descend(node)
-
         typedef_type = node.type
         assert typedef_type is not None
         assert typedef_type.declaration is not None
         typedef_name = typedef_type.declaration.spelling
+
+        for child in node.get_children():
+            if child.kind == CursorKind.ENUM_DECL:
+                self._parser.add_enumeration(child, typedef_name)
+            break
+
+        else:
+            self.descend(node)
 
         underlying_type = node.underlying_typedef_type
         underlying_name = getattr(underlying_type, "spelling", None)

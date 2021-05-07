@@ -1470,23 +1470,19 @@ class Cursor(ctypes.Structure):
         return conf.lib.clang_CXXMethod_isConst(self)
 
     def is_converting_constructor(self):
-        """Returns True if the cursor refers to a C++ converting constructor.
-        """
+        """Returns True if the cursor refers to a C++ converting constructor."""
         return conf.lib.clang_CXXConstructor_isConvertingConstructor(self)
 
     def is_copy_constructor(self):
-        """Returns True if the cursor refers to a C++ copy constructor.
-        """
+        """Returns True if the cursor refers to a C++ copy constructor."""
         return conf.lib.clang_CXXConstructor_isCopyConstructor(self)
 
     def is_default_constructor(self):
-        """Returns True if the cursor refers to a C++ default constructor.
-        """
+        """Returns True if the cursor refers to a C++ default constructor."""
         return conf.lib.clang_CXXConstructor_isDefaultConstructor(self)
 
     def is_move_constructor(self):
-        """Returns True if the cursor refers to a C++ move constructor.
-        """
+        """Returns True if the cursor refers to a C++ move constructor."""
         return conf.lib.clang_CXXConstructor_isMoveConstructor(self)
 
     def is_default_method(self):
@@ -1526,8 +1522,7 @@ class Cursor(ctypes.Structure):
         return conf.lib.clang_CXXRecord_isAbstract(self)
 
     def is_scoped_enum(self):
-        """Returns True if the cursor refers to a scoped enum declaration.
-        """
+        """Returns True if the cursor refers to a scoped enum declaration."""
         return conf.lib.clang_EnumDecl_isScoped(self)
 
     def get_definition(self):
@@ -1800,6 +1795,13 @@ class Cursor(ctypes.Structure):
         """Returns the value of the indicated arg as an unsigned 64b integer."""
         return conf.lib.clang_Cursor_getTemplateArgumentUnsignedValue(self, num)
 
+    def has_child_of_kind(self, kind):
+        for child in self.get_children():
+            if child.kind == kind:
+                return child
+
+        return None
+
     def get_children(self):
         """Return an iterator for accessing the children of this cursor."""
 
@@ -1985,13 +1987,13 @@ class Cursor(ctypes.Structure):
                 TypeKind.ULONGLONG,
                 TypeKind.UINT128,
             ):
-                self._enum_value = conf.lib.clang_getEnumConstantDeclUnsignedValue(  # noqa: B950
+                self._enum_value = conf.lib.clang_getEnumConstantDeclUnsignedValue(
                     self
-                )
+                )  # noqa: B950
             else:
-                self._enum_value = conf.lib.clang_getEnumConstantDeclValue(  # noqa: B950
+                self._enum_value = conf.lib.clang_getEnumConstantDeclValue(
                     self
-                )
+                )  # noqa: B950
         return self._enum_value
 
     def get_category_class_cursor(self):
@@ -2628,7 +2630,7 @@ class Type(ctypes.Structure):
         container is a Type instance.
         """
 
-        class ArgumentsIterator(collections.Sequence):
+        class ArgumentsIterator(collections.abc.Sequence):
             def __init__(self, parent):
                 self.parent = parent
                 self.length = None
@@ -4392,7 +4394,7 @@ class Config(object):
 
     @classmethod
     def set_compatibility_check(cls, check_status: bool) -> None:
-        """ Perform compatibility check when loading libclang
+        """Perform compatibility check when loading libclang
 
         The python bindings are only tested and evaluated with the version of
         libclang they are provided with. To ensure correct behavior a (limited)

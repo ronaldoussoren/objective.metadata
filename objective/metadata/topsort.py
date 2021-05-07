@@ -43,7 +43,7 @@ def topological_sort(
 
     def add_arc(graph: GRAPH_TYPE, fromnode: T, tonode: T) -> None:
         """Add an arc to a graph. Can create multiple arcs.
-           The end nodes must already exist."""
+        The end nodes must already exist."""
         graph[fromnode].outgoing.append(tonode)
         # Update the count of incoming arcs in tonode.
         graph[tonode].incoming += 1
