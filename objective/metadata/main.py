@@ -258,6 +258,7 @@ def main() -> None:
                             ".".join(platform.mac_ver()[0].split(".")[0:2])
                         )
                         sdk_ver = sdk_ver_from_path(sdk)
+                        assert sdk_ver is not None
                         min_deploy = min(current_os_ver, sdk_ver)
 
                     assert min_deploy is not None

@@ -49,7 +49,7 @@ from .datamodel import (
     ReturnInfo,
     StructInfo,
 )
-from .xcode import sdk_ver_from_path
+from .xcode import path_for_default_sdk, sdk_ver_from_path
 
 Config.set_library_path(
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
@@ -72,11 +72,14 @@ class FrameworkParser(object):
     all interesting information found in the headers.
     """
 
+    # This should be changed to be able to parse non-frameworks
+    # as well (such as some of the headers in /usr/include.
+
     def __init__(
         self,
         framework: str,
         arch: str = "x86_64",
-        sdk: str = "/",
+        sdk: str = path_for_default_sdk(),  # noqa: B008, M511
         start_header: typing.Optional[str] = None,
         preheaders: typing.Sequence[str] = (),
         extraheaders: typing.Sequence[str] = (),
