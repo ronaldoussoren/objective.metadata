@@ -1034,7 +1034,13 @@ class FrameworkParser(object):
 
                 m = INT_RE.match(value)
                 if m is not None:
-                    self.meta.literals[key] = LiteralInfo(value=int(m.group(1), 0))
+                    v = m.group(1).lower()
+                    if v.startswith("0") and not v.startswith("0x"):
+                        # Octal constant, which have a different prefix in C than
+                        # in Python, hence the explicit conversion.
+                        self.meta.literals[key] = LiteralInfo(value=int(m.group(1), 8))
+                    else:
+                        self.meta.literals[key] = LiteralInfo(value=int(m.group(1), 0))
                     if self.verbose:
                         print(f"Added macro literal name: {key}")
                     continue
