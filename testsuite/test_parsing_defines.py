@@ -7,8 +7,6 @@ FRAGMENTS = pathlib.Path(__file__).parent / "fragments.framework"
 
 
 class TestParsingDefines(unittest.TestCase):
-    # TODO: Function defines
-
     @classmethod
     def setUpClass(cls):
         cls.parsed = parsing.FrameworkParser(
