@@ -486,6 +486,8 @@ class FrameworkParser(object):
         assert node_type is not None
         typestr, _ = self.__get_typestr(node_type)
 
+        avail = self._get_availability(node)
+
         if typestr == b"?":
             clang_typestr = node.objc_type_encoding
             if len(str(clang_typestr)) > 0:
@@ -495,7 +497,7 @@ class FrameworkParser(object):
             pass
 
         else:
-            for m in n.get_children():
+            for m in (n,) + tuple(n.get_children()):
                 # This needs to be fixed: When 'static const float X = FLT_MAX' has
                 # an empty token_string.
                 if m.kind == CursorKind.INTEGER_LITERAL:
@@ -503,7 +505,8 @@ class FrameworkParser(object):
                         print(f"Ignore {name!r}: empty token string")
                     else:
                         self.meta.literals[name] = LiteralInfo(
-                            value=int(m.token_string)
+                            value=int(m.token_string),
+                            availability=avail,
                         )
                         if self.verbose:
                             print(f"Added static const {name}")
@@ -513,10 +516,16 @@ class FrameworkParser(object):
                         print(f"Ignore {name!r}: empty token string")
                     else:
                         self.meta.literals[name] = LiteralInfo(
-                            value=float(m.token_string)
+                            value=float(m.token_string),
+                            availability=avail,
                         )
                         if self.verbose:
                             print(f"Added static const {name}")
+
+                elif m.kind == CursorKind.DECL_REF_EXPR:
+                    self.meta.aliases[name] = AliasInfo(
+                        alias=m.spelling, availability=avail
+                    )
 
     def add_extern(self, name: str, node: Cursor) -> None:
         node_type = node.type

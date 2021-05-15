@@ -841,6 +841,9 @@ class LiteralInfo:
     # False if this "str" represents a byte literal
     unicode: Optional[bool] = False
 
+    # API Availability
+    availability: Optional[AvailabilityInfo] = None
+
     # For exception information: ignore this declaration
     ignore: bool = False
 
