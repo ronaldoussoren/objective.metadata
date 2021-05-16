@@ -12,6 +12,20 @@ from macholib.mach_o import CPU_TYPE_NAMES
 from macholib.MachO import MachO
 
 
+def path_for_xcode_developer() -> str:
+    """
+    Return the filesystem path for the "Developer"
+    directory in Xcode.app.
+    """
+    with open(os.devnull, "a") as dn:
+        out = subprocess.check_output(
+            ["xcode-select", "-p"],
+            stderr=dn,
+        ).decode()
+
+        return out.strip()
+
+
 def macho_archs(filename: typing.Union[os.PathLike[str], str]) -> typing.Set[str]:
     result = set()
 

@@ -49,10 +49,12 @@ from .datamodel import (
     ReturnInfo,
     StructInfo,
 )
-from .xcode import path_for_default_sdk, sdk_ver_from_path
+from .xcode import path_for_default_sdk, path_for_xcode_developer, sdk_ver_from_path
 
 Config.set_library_path(
-    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/"  # noqa: B950
+    os.path.join(
+        path_for_xcode_developer(), "Toolchains/XcodeDefault.xctoolchain/usr/lib/"
+    )
 )
 
 from objective.metadata.clanghelpers import (  # isort:skip  # noqa: E402
