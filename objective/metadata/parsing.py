@@ -1056,13 +1056,9 @@ class FrameworkParser(object):
 
                 m = INT_RE.match(value)
                 if m is not None:
-                    v = m.group(1).lower()
-                    if v.startswith("0") and not v.startswith("0x"):
-                        # Octal constant, which have a different prefix in C than
-                        # in Python, hence the explicit conversion.
-                        self.meta.literals[key] = LiteralInfo(value=int(m.group(1), 8))
-                    else:
-                        self.meta.literals[key] = LiteralInfo(value=int(m.group(1), 0))
+                    self.meta.literals[key] = LiteralInfo(
+                        value=self.__parse_int(m.group(1))
+                    )
                     if self.verbose:
                         print(f"Added macro literal name: {key}")
                     continue
@@ -1083,7 +1079,7 @@ class FrameworkParser(object):
                         print(f"Added macro literal name: {key}")
                     continue
 
-                m = UNICODE_RE.match(value)
+                m = OBJC_STRING_RE.match(value)
                 if m is not None:
                     self.meta.literals[key] = LiteralInfo(
                         unicode=True, value=m.group(1)
@@ -1092,7 +1088,7 @@ class FrameworkParser(object):
                         print(f"Added macro literal name: {key}")
                     continue
 
-                m = UNICODE2_RE.match(value)
+                m = CF_STRING_RE.match(value)
                 if m is not None:
                     self.meta.literals[key] = LiteralInfo(
                         value=m.group(1), unicode=True
@@ -1584,6 +1580,10 @@ class FrameworkParser(object):
         if isinstance(value, int):
             return value
         value = value.lower().rstrip("l").rstrip("u")
+        if value.startswith("0") and not value.startswith("0x"):
+            # Octal literals in C have a different syntax than
+            # in Python.
+            return int(value, 8)
         return int(value, 0)
 
     def get_typename(self, obj: typing.Union[Cursor, Type]) -> typing.Optional[str]:
@@ -2182,7 +2182,8 @@ class DefinitionVisitor(AbstractClangVisitor):
         if linkage == LinkageKind.EXTERNAL or linkage == LinkageKind.UNIQUE_EXTERNAL:
             self._parser.add_extern(node.spelling, node)
 
-        elif linkage == LinkageKind.INTERNAL:
+        else:
+            assert linkage == LinkageKind.INTERNAL, f"linkage == {linkage!r}"
             self._parser.add_static_const(node.spelling, node)
 
     def visit_enum_decl(self, node: Cursor) -> None:
@@ -2277,27 +2278,48 @@ class DefinitionVisitor(AbstractClangVisitor):
         self._parser.parse_define(macro, file_name)
 
 
+# Regular expression for recognizing preprocessor "line" statements
 LINE_RE = re.compile(r'^# \d+ "([^"]*)" ')
+
+# Regular expression for regcognizing preprocessor "define" statements (without arguments)
 DEFINE_RE = re.compile(r"#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$")
+
+# In defines: Recognition of C-style integer literals (including casts)
 INT_RE = re.compile(
     r"^\(?(?:\([A-Za-z][A-Za-z0-9]*(?:\s+long)?\))?((?:-?0[Xx][0-9A-Fa-f]+)|(?:-?\d+))[UL]*\)?$"  # noqa: B950
 )
+
+# In defines: Recognition of C-style floating point literals (including casts)
 FLOAT_RE = re.compile(r"^\(?(?:\([A-Za-z][A-Za-z0-9]*\))?\(?([-]?\d+\.\d+)\)?\)?$")
+
+# In defines: Recognition of C-style basic string literals (including casts)
 STR_RE = re.compile(r'^"(.*)"$')
-UNICODE_RE = re.compile(r'^@"(.*)"$')
-UNICODE2_RE = re.compile(r'^CFSTR\("(.*)"\)$')
+
+# In defines: Recognition of Objective-C string literals: @"value"
+OBJC_STRING_RE = re.compile(r'^@"(.*)"$')
+
+# In defines: Recognition of CoreFoundation string literals: CFSTR("value")
+CF_STRING_RE = re.compile(r'^CFSTR\("(.*)"\)$')
+
+# In defines: Recognition of aliases (including casts)
 ALIAS_RE = re.compile(r"^(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*([A-Za-z_][A-Za-z0-9_]*)$")
+
+# In defines: Recognition a NULL pointer casted to a type
 NULL_VALUE = re.compile(r"\(\([A-Za-z0-9]+\)NULL\)")
+
+# In defines: Recognition of function calls
 CALL_VALUE = re.compile(r"^[A-Za-z0-9]+\([A-Za-z0-9]*\)$")
+
+# In defines: Recognition of bitwise OR expressions
+OR_EXPR_RE = re.compile(r"([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*)")
+
+# Regular expression for regcognizing preprocessor "define" statements (with arguments)
 FUNC_DEFINE_RE = re.compile(
     r"#\s*define\s+([A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_, ]*\))\s+(.*)$"
 )
+
+
+# XXX: Need to reverse engineer what these are for (framework and usage)
 ERR_SUB_DEFINE_RE = re.compile(r"err_sub\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)")
 ERR_SYSTEM_DEFINE_RE = re.compile(r"err_system\s*\(\s*((?:0x)?[0-9a-fA-F]+)\s*\)")
 SC_SCHEMA_RE = re.compile(r"SC_SCHEMA_KV\s*\(\s*([A-Za-z0-9_]*)\s*,.*\)")
-OR_EXPR_RE = re.compile(r"\([A-Za-z0-9]*(\s*\|\s*[A-Za-z0-9]*)*\)")
-
-
-def debug_break():
-    if False:
-        pass

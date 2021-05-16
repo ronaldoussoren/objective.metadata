@@ -1,41 +1,4 @@
 # This is a heavily modified version of the clang Python bindings
-r"""
-Clang Indexing Library Bindings
-===============================
-
-This module provides an interface to the Clang indexing library. It is a
-low-level interface to the indexing library which attempts to match the Clang
-API directly while also being "pythonic". Notable differences from the C API
-are:
-
- * string results are returned as Python strings, not CXString objects.
-
- * null cursors are translated to None.
-
- * access to child cursors is done via iteration, not visitation.
-
-The major indexing objects are:
-
-  Index
-
-    The top-level object which manages some global library state.
-
-  TranslationUnit
-
-    High-level object encapsulating the AST for a single translation unit. These
-    can be loaded from .ast files or parsed on the fly.
-
-  Cursor
-
-    Generic object for representing a node in the AST.
-
-  SourceRange, SourceLocation, and File
-
-    Objects representing information about the input source.
-
-Most object information is exposed using properties, when the underlying API
-call is efficient.
-"""
 import collections.abc
 import ctypes
 import enum

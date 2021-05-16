@@ -63,6 +63,12 @@ class TestParsingDefines(unittest.TestCase):
         self.assertIs(info.availability, None)
         self.assertIs(info.ignore, ignore)
 
+    def assert_expression(self, *, name, expression):
+        self.assertIn(name, self.parsed.meta.expressions)
+        info = self.parsed.meta.expressions[name]
+
+        self.assertEqual(info.expression, expression)
+
     def test_alias(self):
         self.assert_alias(name="ALIAS", alias="NSWindowBackingLocationDefault")
 
@@ -84,3 +90,13 @@ class TestParsingDefines(unittest.TestCase):
         self.assert_function_macro(
             name="DIFFERENCE", definition="def DIFFERENCE(a, b): return ((b) - (a))"
         )
+
+    def test_null_values(self):
+        self.assert_define_value(name="NULL_POINTER", value=None)
+        self.assert_define_value(name="NIL_POINTER", value=None)
+        self.assert_define_value(name="NIL_CLASS", value=None)
+        self.assert_define_value(name="CASTED_NULL", value=None)
+
+    def test_expressions(self):
+        self.assert_expression(name="ORED_VALUES", expression="N1|N2|N3")
+        self.assert_expression(name="FUNCTION_VALUE", expression="SomeFunction(42)")
