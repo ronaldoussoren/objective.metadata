@@ -341,7 +341,7 @@ class ArgInfo:
     typestr: bytes = field(metadata=bytes_config)
 
     # Name of the argument
-    name: str
+    name: Optional[str] = None
 
     # True if *typestr* is not the same as the value
     # in the ObjC runtime.
@@ -577,6 +577,11 @@ class FunctionInfo:
 
     # Is this a variadic method
     variadic: bool = False
+
+    @property
+    def is_k_and_r(self):
+        """ K&R style declaration """
+        return self.variadic and not self.args
 
     # Argument index for a variadic function
     # that is the printf_format (if any)

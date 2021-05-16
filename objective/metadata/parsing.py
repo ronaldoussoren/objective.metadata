@@ -608,7 +608,7 @@ class FrameworkParser(object):
             typestr = self.__get_typestr(arg_type)[0]
             assert typestr is not None
 
-            arginfo = ArgInfo(name=arg.spelling, typestr=typestr)
+            arginfo = ArgInfo(name=arg.spelling or None, typestr=typestr)
 
             if arg_type.kind == TypeKind.BLOCKPOINTER:
                 arginfo = replace(arginfo, callable=self.__extract_block(arg_type))
@@ -1535,7 +1535,7 @@ class FrameworkParser(object):
             arg = ArgInfo(
                 typestr=typestr,
                 typestr_special=special,
-                name=a.spelling,
+                name=a.spelling or None,
                 type_name=type_name,
             )
 
