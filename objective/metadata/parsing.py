@@ -5,7 +5,6 @@ interesting definitions.
 import os
 import platform
 import re
-import sys
 import typing
 from dataclasses import replace
 
@@ -16,6 +15,7 @@ from .clang import (
     Config,
     Cursor,
     CursorKind,
+    DiagnosticSeverity,
     Index,
     LinkageKind,
     NullabilityKind,
@@ -61,6 +61,10 @@ from objective.metadata.clanghelpers import (  # isort:skip  # noqa: E402
 
 
 class SelfReferentialTypeError(Exception):
+    pass
+
+
+class ParsingError(Exception):
     pass
 
 
@@ -150,14 +154,21 @@ class FrameworkParser(object):
             translation_unit = index.parse(
                 fake_path, args, unsaved_files, options=options
             )
-        except TranslationUnitLoadError:
-            sys.stderr.write("ERROR: libclang compilation failed")
-            exit(1)
+        except TranslationUnitLoadError as exc:
+            raise ParsingError(f"Libclang complication failed: {exc}")
 
         # Not sure this is possible, but...
         if not translation_unit:
-            sys.stderr.write("ERROR: libclang compilation failed")
-            exit(1)
+            raise ParsingError("Libclang failed to produce a translation_unit")
+
+        errors = []
+        for diag in translation_unit.diagnostics:
+            if diag.severity in (DiagnosticSeverity.ERROR, DiagnosticSeverity.FATAL):
+                errors.append(diag.format())
+
+        if errors:
+            NL = "\n"
+            raise ParsingError(f"Parsing problems:\n{NL.join(errors)}")
 
         if self.verbose:
             print("libclang compilation complete.")

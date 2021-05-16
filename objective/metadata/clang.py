@@ -341,18 +341,20 @@ class SourceRange(ctypes.Structure):
         return contents
 
 
+class DiagnosticSeverity(enum.IntEnum):
+    IGNORED = 0
+    NOTE = 1
+    WARNING = 2
+    ERROR = 3
+    FATAL = 4
+
+
 class Diagnostic(object):
     """
     A Diagnostic is a single instance of a Clang diagnostic. It includes the
     diagnostic severity, the message, the location the diagnostic occurred, as
     well as additional source ranges and associated fix-it hints.
     """
-
-    Ignored = 0
-    Note = 1
-    Warning = 2
-    Error = 3
-    Fatal = 4
 
     DisplaySourceLocation = 0x01
     DisplayColumn = 0x02
@@ -369,15 +371,15 @@ class Diagnostic(object):
         conf.lib.clang_disposeDiagnostic(self)
 
     @property
-    def severity(self):
-        return conf.lib.clang_getDiagnosticSeverity(self)
+    def severity(self) -> DiagnosticSeverity:
+        return DiagnosticSeverity(conf.lib.clang_getDiagnosticSeverity(self))
 
     @property
     def location(self):
         return conf.lib.clang_getDiagnosticLocation(self)
 
     @property
-    def spelling(self):
+    def spelling(self) -> str:
         return conf.lib.clang_getDiagnosticSpelling(self)
 
     @property
