@@ -14,7 +14,7 @@ import subprocess
 import sys
 import typing
 
-from . import compile, docgen, protocols, scan
+from . import compile, docgen, protocols, scan, typestubs
 
 parser = argparse.ArgumentParser(prog="objective-metadata-tool")
 parser.add_argument(
@@ -63,6 +63,9 @@ compile_command = subparsers.add_parser(
 protocols_command = subparsers.add_parser(
     "protocols", help="Compile data into the protocols C file"
 )
+typestubs_command = subparsers.add_parser(
+    "typestubs", help="Generate type stubs ('.pyi') for a framework"
+)
 
 
 def make_pairs(
@@ -86,6 +89,7 @@ ConfigInfo = typing.TypedDict(
         "post-headers": typing.List[str],
         "link-framework": str,
         "compiled": str,  # make this a Path
+        "typestub": str,  # make this a Path
         "protocols-file": str,  # make this a Path
         "only-headers": typing.Optional[typing.List[str]],
         "documentation-dir": str,  # make this a Path
@@ -156,6 +160,17 @@ def parse_ini(
                 "Lib",
                 info["python-package"].replace(".", os.path.sep),
                 "_metadata.py",
+            )
+
+        if cfg.has_option(section, "typestub"):
+            info["typestub"] = os.path.join(ini_dir, cfg.get(section, "typestub"))
+        else:
+            info["typestub"] = os.path.join(
+                ini_dir,
+                "..",
+                "Lib",
+                info["python-package"].replace(".", os.path.sep),
+                "__init__.pyi",
             )
 
         if cfg.has_option(section, "protocols-file"):
@@ -300,6 +315,19 @@ def main() -> None:
                 )
             compile.compile_metadata(
                 info["compiled"], info["exceptions"], glob.glob(info["raw"] + "/*")
+            )
+
+        elif args.command == "typestubs":
+            if args.verbose:
+                print(
+                    "Generate typestubs framework=%r target=%r"
+                    % (info["framework"], info["compiled"])
+                )
+            typestubs.generate_typestubs(
+                info["typestub"],
+                info["framework"],
+                info["exceptions"],
+                glob.glob(info["raw"] + "/*"),
             )
 
         elif args.command == "protocols":
